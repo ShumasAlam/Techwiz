@@ -41,7 +41,7 @@ const getDashboardStats = async (req, res) => {
 
 const updateFarmerStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, featured } = req.body;
     const farmerId = req.params.id;
 
     const farmer = await Farmer.findOne(byId(farmerId));
@@ -49,11 +49,12 @@ const updateFarmerStatus = async (req, res) => {
       return res.status(404).json({ message: 'Farmer not found' });
     }
 
-    farmer.status = status;
+    if (status) farmer.status = status;
+    if (featured !== undefined) farmer.featured = Boolean(featured);
     await farmer.save();
 
     // Also update associated user if exists
-    if (farmer.userId) {
+    if (farmer.userId && status) {
       await User.findOneAndUpdate(
         byId(farmer.userId),
         { status: status === 'approved' ? 'approved' : status }
@@ -64,6 +65,29 @@ const updateFarmerStatus = async (req, res) => {
   } catch (error) {
     console.error('Update farmer status error:', error);
     res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+const toggleFarmerFeatured = async (req, res) => {
+  try {
+    const farmerId = req.params.id;
+    const farmer = await Farmer.findOne(byId(farmerId));
+    if (!farmer) {
+      return res.status(404).json({ message: 'Farmer not found' });
+    }
+
+    farmer.featured = req.body.featured !== undefined ? Boolean(req.body.featured) : !farmer.featured;
+    await farmer.save();
+
+    res.json({
+      id: farmer.id,
+      name: farmer.name,
+      featured: farmer.featured,
+      message: `Farmer ${farmer.name} is now ${farmer.featured ? 'featured on homepage' : 'unfeatured'}`
+    });
+  } catch (error) {
+    console.error('Toggle farmer featured error:', error);
+    res.status(500).json({ message: 'Server error toggling featured status' });
   }
 };
 
@@ -101,6 +125,7 @@ const getAllUsers = async (req, res) => {
 module.exports = {
   getDashboardStats,
   updateFarmerStatus,
+  toggleFarmerFeatured,
   updateUserStatus,
   getAllUsers
 };

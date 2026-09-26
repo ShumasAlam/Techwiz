@@ -7,7 +7,13 @@ const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }]
 
 const getFarmers = async (req, res) => {
   try {
-    const farmers = await Farmer.find({}).sort({ name: 1 }).lean();
+    const { featured } = req.query;
+    const filter = {};
+    if (featured === 'true') {
+      filter.featured = true;
+    }
+
+    const farmers = await Farmer.find(filter).sort({ featured: -1, rating: -1, name: 1 }).lean();
     const normalized = farmers.map(f => ({
       id: f.id || f._id.toString(),
       userId: f.userId,
@@ -18,6 +24,7 @@ const getFarmers = async (req, res) => {
       rating: f.rating || 0,
       reviews: f.reviews || 0,
       years: f.years || 0,
+      featured: Boolean(f.featured),
       status: f.status || 'approved',
       bio: f.bio || '',
       specialties: f.specialties || [],
@@ -38,6 +45,7 @@ const getFarmerById = async (req, res) => {
     }
     res.json({
       id: farmer.id || farmer._id.toString(),
+      featured: Boolean(farmer.featured),
       ...farmer
     });
   } catch (error) {
@@ -63,6 +71,27 @@ const updateFarmerProfile = async (req, res) => {
   }
 };
 
+const toggleFeatured = async (req, res) => {
+  try {
+    const farmer = await Farmer.findOne(byId(req.params.id));
+    if (!farmer) {
+      return res.status(404).json({ message: 'Farmer not found' });
+    }
+
+    farmer.featured = req.body.featured !== undefined ? req.body.featured : !farmer.featured;
+    await farmer.save();
+    res.json({
+      id: farmer.id,
+      name: farmer.name,
+      featured: farmer.featured,
+      message: `Farmer ${farmer.name} is now ${farmer.featured ? 'featured on homepage' : 'unfeatured'}`
+    });
+  } catch (error) {
+    console.error('Toggle featured error:', error);
+    res.status(500).json({ message: 'Server error toggling featured status' });
+  }
+};
+
 const getFarmerOrders = async (req, res) => {
   try {
     const farmerId = req.user?.farmerId || req.user?.id;
@@ -79,5 +108,6 @@ module.exports = {
   getFarmerById,
   getFarmerProfile: getFarmerById,
   updateFarmerProfile,
+  toggleFeatured,
   getFarmerOrders
 };

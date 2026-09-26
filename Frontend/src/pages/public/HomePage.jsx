@@ -53,7 +53,7 @@ function heroSlidesFromData(db) {
     .slice(0, 3)
   const topFarmers = [...db.farmers]
     .filter((farmer) => farmer.status === 'approved')
-    .sort((first, second) => second.rating - first.rating || second.reviews - first.reviews)
+    .sort((first, second) => (second.featured ? 1 : 0) - (first.featured ? 1 : 0) || second.rating - first.rating || second.reviews - first.reviews)
     .slice(0, 3)
 
   return [
@@ -119,11 +119,21 @@ export default function HomePage() {
   const mapTarget = liveLocation ? `${liveLocation.lat},${liveLocation.lng}` : `${nearbyMarkets[0]?.address || 'DHA Lahore'} farmers market`
   const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(mapTarget)}&z=13&output=embed`
   const toggleFavorite = (id) => setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+
+  // Feature 1: Featured grower spotlight
+  const featuredFarmer = useMemo(() => {
+    return db.farmers.find(f => f.featured && f.status === 'approved') || db.farmers.find(f => f.status === 'approved') || db.farmers[0]
+  }, [db.farmers])
+
+  // Feature 7: Route planning / Geo Location
   const useLiveLocation = () => {
     if (!navigator.geolocation) { toast.error('Location is not supported. Enter your area instead.'); return }
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       setLiveLocation({ lat: coords.latitude, lng: coords.longitude })
       setLocation('Live location')
+      if (nearbyMarkets[0]?.id) {
+        api.markets.planRoute(coords.latitude, coords.longitude, nearbyMarkets[0].id).catch(() => {})
+      }
     }, () => toast.error('Could not get your location. Enter your area instead.'))
   }
 
@@ -182,12 +192,29 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section section--ink">
-        <div className="shell story-grid">
-          <Reveal className="story-image"><img src={marketCrate} alt="Fresh vegetables in a wooden farm crate" /><div><span>12</span><p>years growing for Lahore</p></div></Reveal>
-          <Reveal delay={140} className="story-copy"><p className="eyebrow eyebrow--gold">MEET YOUR GROWER</p><blockquote>"Good food should not have a mystery in the middle."</blockquote><p>Hassan and his family grow every Willow & Root harvest with soil-first methods, then update their stock themselves before each market.</p><div className="farmer-sign"><span>WR</span><div><strong>Hassan Ali</strong><small>Willow & Root Farm - Bedian Road</small></div></div><Link className="btn btn--harvest" to="/farmers/f-1">Visit the farm profile <ArrowRight /></Link></Reveal>
-        </div>
-      </section>
+      {featuredFarmer && (
+        <section className="section section--ink">
+          <div className="shell story-grid">
+            <Reveal className="story-image">
+              <img src={marketCrate} alt="Fresh vegetables in a wooden farm crate" />
+              <div><span>{featuredFarmer.years || 10}</span><p>years growing locally</p></div>
+            </Reveal>
+            <Reveal delay={140} className="story-copy">
+              <p className="eyebrow eyebrow--gold">{featuredFarmer.featured ? 'FEATURED GROWER SPOTLIGHT' : 'MEET YOUR GROWER'}</p>
+              <blockquote>"{featuredFarmer.bio || 'Good food should not have a mystery in the middle.'}"</blockquote>
+              <p>{featuredFarmer.owner} and family grow every harvest with soil-first methods, then update their stock themselves before each market.</p>
+              <div className="farmer-sign">
+                <span>{featuredFarmer.initials}</span>
+                <div>
+                  <strong>{featuredFarmer.owner}</strong>
+                  <small>{featuredFarmer.name} · {featuredFarmer.specialties?.join(', ') || 'Fresh harvest'}</small>
+                </div>
+              </div>
+              <Link className="btn btn--harvest" to={`/farmers/${featuredFarmer.id}`}>Visit the farm profile <ArrowRight /></Link>
+            </Reveal>
+          </div>
+        </section>
+      )}
 
       <section className="section section--paper section--compact">
         <div className="shell">

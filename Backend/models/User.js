@@ -49,6 +49,21 @@ const userSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  compareList: {
+    type: [String],
+    default: []
+  },
+  cart: [{
+    productId: { type: String, required: true },
+    quantity: { type: Number, required: true, default: 1 },
+    marketId: { type: String, default: '' }
+  }],
+  preferences: {
+    theme: { type: String, default: 'light' },
+    notificationsEnabled: { type: Boolean, default: true },
+    preferredMarketId: { type: String, default: '' },
+    preferredDay: { type: String, default: '' }
+  },
   status: {
     type: String,
     enum: ['active', 'pending', 'approved', 'suspended'],

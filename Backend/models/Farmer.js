@@ -43,6 +43,10 @@ const farmerSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  featured: {
+    type: Boolean,
+    default: false
+  },
   status: {
     type: String,
     enum: ['approved', 'pending', 'suspended'],

@@ -103,6 +103,10 @@ const remote = async (path, options = {}) => {
     error.status = response.status
     throw error
   }
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('text/csv')) {
+    return response.text()
+  }
   return response.json()
 }
 
@@ -203,14 +207,13 @@ export const api = {
     register: (payload) => localFirst('/auth/register', { method: 'POST', body: JSON.stringify(payload) }, () => {
       const db = readDB()
       if (db.users.some((item) => item.email.toLowerCase() === payload.email.toLowerCase())) throw new Error('An account with this email already exists.')
-      const user = { id: uid('u'), ...payload, favorites: [], farmerId: payload.role === 'farmer' ? uid('f') : undefined }
+      const user = { id: uid('u'), ...payload, favorites: [], compareList: [], cart: [], farmerId: payload.role === 'farmer' ? uid('f') : undefined }
       db.users.push(user)
-      if (payload.role === 'farmer') db.farmers.push({ id: user.farmerId, userId: user.id, name: payload.businessName, owner: payload.name, initials: payload.name.slice(0, 2).toUpperCase(), marketIds: [], rating: 0, reviews: 0, years: 0, status: 'pending', bio: 'New to MarketLink.', specialties: [], pickup: [] })
+      if (payload.role === 'farmer') db.farmers.push({ id: user.farmerId, userId: user.id, name: payload.businessName, owner: payload.name, initials: payload.name.slice(0, 2).toUpperCase(), marketIds: [], rating: 0, reviews: 0, years: 0, status: 'pending', bio: 'New to MarketLink.', specialties: [], pickup: [], featured: false })
       writeDB(db)
       return { token: `demo-${user.id}`, user: { ...user, password: undefined } }
     }),
     getProfile: () => localFirst('/auth/profile', { method: 'GET' }, () => {
-      const token = localStorage.getItem('marketlink_token')
       const db = readDB()
       return db.users[0] || null
     }),
@@ -226,7 +229,7 @@ export const api = {
   },
 
   // ==========================================
-  // 3. USERS
+  // 3. USERS (FAVORITES, COMPARE & PREFERENCES)
   // ==========================================
   users: {
     toggleFavorite: (userId, itemId) => localFirst('/users/' + userId + '/favorites', { method: 'PATCH', body: JSON.stringify({ itemId }) }, () => {
@@ -241,6 +244,44 @@ export const api = {
     getFavorites: (userId) => localFirst(`/users/${userId}/favorites`, { method: 'GET' }, () => {
       const user = readDB().users.find((item) => item.id === userId)
       return user?.favorites || []
+    }),
+    // Item 4: Compare List API
+    getCompare: (userId) => localFirst(`/users/${userId}/compare`, { method: 'GET' }, () => {
+      const user = readDB().users.find((item) => item.id === userId)
+      return { productIds: user?.compareList || [] }
+    }),
+    toggleCompare: (userId, productId) => localFirst(`/users/${userId}/compare`, { method: 'POST', body: JSON.stringify({ productId }) }, () => {
+      const db = readDB()
+      const user = db.users.find((item) => item.id === userId)
+      if (user) {
+        user.compareList ||= []
+        user.compareList = user.compareList.includes(productId) ? user.compareList.filter(id => id !== productId) : [...user.compareList, productId]
+        writeDB(db)
+      }
+      return { compareList: user?.compareList || [] }
+    }),
+    clearCompare: (userId) => localFirst(`/users/${userId}/compare`, { method: 'DELETE' }, () => {
+      const db = readDB()
+      const user = db.users.find((item) => item.id === userId)
+      if (user) {
+        user.compareList = []
+        writeDB(db)
+      }
+      return { compareList: [] }
+    }),
+    // Item 8: Preferences API
+    getPreferences: (userId) => localFirst(`/users/${userId}/preferences`, { method: 'GET' }, () => {
+      const user = readDB().users.find((item) => item.id === userId)
+      return user?.preferences || { theme: 'light', notificationsEnabled: true }
+    }),
+    updatePreferences: (userId, prefs) => localFirst(`/users/${userId}/preferences`, { method: 'PUT', body: JSON.stringify(prefs) }, () => {
+      const db = readDB()
+      const user = db.users.find((item) => item.id === userId)
+      if (user) {
+        user.preferences = { ...user.preferences, ...prefs }
+        writeDB(db)
+      }
+      return { preferences: user?.preferences }
     }),
     getNotifications: (userId) => localFirst(`/users/${userId}/notifications`, { method: 'GET' }, () => {
       return readDB().notifications.filter((item) => item.userId === userId)
@@ -333,12 +374,17 @@ export const api = {
   },
 
   // ==========================================
-  // 6. MARKETS
+  // 6. MARKETS & ITEM 7 (GEO-SEARCH / ROUTE PLAN)
   // ==========================================
   markets: {
     list: () => localFirst('/markets', {}, () => readDB().markets),
     get: (id) => localFirst(`/markets/${id}`, {}, () => readDB().markets.find((item) => item.id === id)),
-    getNearby: (lat, lng) => localFirst(`/markets/nearby?lat=${lat}&lng=${lng}`, {}, () => readDB().markets),
+    getNearby: (lat, lng, radiusKm = 50) => localFirst(`/markets/nearby?lat=${lat}&lng=${lng}&radiusKm=${radiusKm}`, {}, () => readDB().markets),
+    // Item 7: Route Plan API
+    planRoute: (lat, lng, marketId) => localFirst('/markets/route-plan', { method: 'POST', body: JSON.stringify({ lat, lng, marketId }) }, () => {
+      const market = readDB().markets.find(m => m.id === marketId)
+      return { market, directions: { googleMapsUrl: `https://www.google.com/maps?q=${encodeURIComponent(market?.address || '')}` } }
+    }),
     create: (payload) => localFirst('/markets', { method: 'POST', body: JSON.stringify(payload) }, () => {
       const db = readDB()
       const item = { id: uid('m'), ...payload }
@@ -424,16 +470,27 @@ export const api = {
   },
 
   // ==========================================
-  // 8. FARMERS
+  // 8. FARMERS & ITEM 1 (FEATURED FARMER)
   // ==========================================
   farmers: {
-    list: () => localFirst('/farmers', {}, () => readDB().farmers),
+    list: (featuredOnly = false) => localFirst(featuredOnly ? '/farmers?featured=true' : '/farmers', {}, () => {
+      const farmers = readDB().farmers
+      return featuredOnly ? farmers.filter(f => f.featured) : farmers
+    }),
     get: (id) => localFirst(`/farmers/${id}`, {}, () => readDB().farmers.find((item) => item.id === id)),
     getProfile: (id) => localFirst(`/farmers/profile/${id}`, {}, () => readDB().farmers.find((item) => item.id === id)),
     updateProfile: (id, payload) => localFirst(`/farmers/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, () => {
       const db = readDB()
       const farmer = db.farmers.find((item) => item.id === id)
       if (farmer) Object.assign(farmer, payload)
+      writeDB(db)
+      return farmer
+    }),
+    // Item 1: Toggle Featured Farmer
+    toggleFeatured: (id, featured) => localFirst(`/farmers/${id}/featured`, { method: 'PATCH', body: JSON.stringify({ featured }) }, () => {
+      const db = readDB()
+      const farmer = db.farmers.find((item) => item.id === id)
+      if (farmer) farmer.featured = featured !== undefined ? featured : !farmer.featured
       writeDB(db)
       return farmer
     }),
@@ -462,10 +519,20 @@ export const api = {
       }
     }),
     getUsers: () => localFirst('/admin/users', { method: 'GET' }, () => readDB().users),
-    updateFarmerStatus: (id, status) => localFirst(`/admin/farmers/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }, () => {
+    updateFarmerStatus: (id, status, featured) => localFirst(`/admin/farmers/${id}`, { method: 'PATCH', body: JSON.stringify({ status, featured }) }, () => {
       const db = readDB()
       const farmer = db.farmers.find((item) => item.id === id)
-      if (farmer) farmer.status = status
+      if (farmer) {
+        if (status) farmer.status = status
+        if (featured !== undefined) farmer.featured = featured
+      }
+      writeDB(db)
+      return farmer
+    }),
+    toggleFarmerFeatured: (id, featured) => localFirst(`/admin/farmers/${id}/featured`, { method: 'PATCH', body: JSON.stringify({ featured }) }, () => {
+      const db = readDB()
+      const farmer = db.farmers.find((item) => item.id === id)
+      if (farmer) farmer.featured = featured !== undefined ? featured : !farmer.featured
       writeDB(db)
       return farmer
     }),
@@ -479,7 +546,80 @@ export const api = {
   },
 
   // ==========================================
-  // 10. NOTIFICATIONS
+  // 10. ITEM 2: CATEGORIES API
+  // ==========================================
+  categories: {
+    list: () => localFirst('/categories', { method: 'GET' }, () => {
+      const categories = ['Vegetables', 'Fruit', 'Bakery', 'Dairy', 'Eggs', 'Other Produce']
+      return categories.map((name, i) => ({ id: `cat-${i+1}`, name }))
+    }),
+    create: (name, description = '') => localFirst('/categories', { method: 'POST', body: JSON.stringify({ name, description }) }, () => {
+      return { id: `cat-${Date.now()}`, name }
+    }),
+    remove: (id) => localFirst(`/categories/${id}`, { method: 'DELETE' }, () => {
+      return { message: 'Category deleted', success: true }
+    }),
+  },
+
+  // ==========================================
+  // 11. ITEM 3: REPORTS & CSV EXPORT API
+  // ==========================================
+  reports: {
+    list: () => localFirst('/reports', { method: 'GET' }, () => []),
+    generate: (reportType) => localFirst('/reports/generate', { method: 'POST', body: JSON.stringify({ reportType }) }, () => ({
+      id: `rep-${Date.now()}`, reportType, createdAt: new Date().toISOString()
+    })),
+    downloadCSV: async (reportType) => {
+      if (!API_URL) return null
+      return remote(`/reports/export/${encodeURIComponent(reportType)}`)
+    },
+  },
+
+  // ==========================================
+  // 12. ITEM 5: SERVER-SIDE CART PERSISTENCE
+  // ==========================================
+  cart: {
+    get: (userId) => localFirst(`/cart/${userId}`, { method: 'GET' }, () => {
+      const user = readDB().users.find((u) => u.id === userId)
+      return { items: user?.cart || [] }
+    }),
+    save: (userId, items) => localFirst(`/cart/${userId}`, { method: 'POST', body: JSON.stringify({ items }) }, () => {
+      const db = readDB()
+      const user = db.users.find((u) => u.id === userId)
+      if (user) {
+        user.cart = items
+        writeDB(db)
+      }
+      return { cart: items }
+    }),
+    clear: (userId) => localFirst(`/cart/${userId}`, { method: 'DELETE' }, () => {
+      const db = readDB()
+      const user = db.users.find((u) => u.id === userId)
+      if (user) {
+        user.cart = []
+        writeDB(db)
+      }
+      return { success: true }
+    }),
+  },
+
+  // ==========================================
+  // 13. ITEM 6: AI CHATBOT BACKEND ENDPOINT
+  // ==========================================
+  ai: {
+    chat: (message, history = []) => localFirst('/ai/chat', { method: 'POST', body: JSON.stringify({ message, history }) }, () => ({
+      reply: "MarketLink AI: Local growers harvest weekly. Reserve your items and collect in person!",
+      suggestions: ['Check market schedule', 'View vegetables', 'How does reservation work?']
+    })),
+    suggestions: () => localFirst('/ai/suggestions', { method: 'GET' }, () => [
+      'What markets are open this Saturday?',
+      'Show me fresh organic vegetables',
+      'How do I reserve and pay for my basket?'
+    ]),
+  },
+
+  // ==========================================
+  // 14. NOTIFICATIONS
   // ==========================================
   notifications: {
     list: (userId) => localFirst(userId ? `/notifications?userId=${userId}` : '/notifications', {}, () => {
@@ -519,7 +659,7 @@ export const api = {
   },
 
   // ==========================================
-  // 11. SUBSCRIPTIONS
+  // 15. SUBSCRIPTIONS & ANNOUNCEMENTS
   // ==========================================
   subscriptions: {
     notifyMe: (userId, productId) => {
@@ -536,10 +676,6 @@ export const api = {
     },
     list: () => localFirst('/subscriptions', { method: 'GET' }, () => readDB().stockSubscriptions || []),
   },
-
-  // ==========================================
-  // 12. ANNOUNCEMENTS
-  // ==========================================
   announcements: {
     publish: (text) => {
       const db = readDB()
@@ -552,7 +688,7 @@ export const api = {
   },
 
   // ==========================================
-  // 13. SNAPSHOT
+  // 16. SNAPSHOT
   // ==========================================
   snapshot: () => readDB(),
 }

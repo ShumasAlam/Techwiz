@@ -7,7 +7,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const app = require('./server');
 
 const testSuite = async () => {
-  console.log('🧪 Starting Full Comprehensive API Verification Test Suite...\n');
+  console.log('🧪 Starting Full Comprehensive API Verification Test Suite (All 8 Features)...\n');
 
   const server = app.listen(5099, async () => {
     console.log('🚀 Test server running on http://localhost:5099\n');
@@ -156,14 +156,22 @@ const testSuite = async () => {
       }
     }
 
-    // 4. MARKETS ENDPOINTS
-    console.log('\n--- 🏪 MARKETS ENDPOINTS ---');
+    // 4. MARKETS ENDPOINTS & ITEM 7 (GEO-SEARCH / ROUTE PLAN)
+    console.log('\n--- 🏪 MARKETS ENDPOINTS & GEO-SEARCH ---');
     const marketsRes = await request('GET /markets', '/markets');
     await request('GET /markets/nearby?lat=33.72&lng=73.06', '/markets/nearby?lat=33.72&lng=73.06');
 
     const sampleMarket = marketsRes.data?.[0];
     if (sampleMarket) {
       await request(`GET /markets/${sampleMarket.id}`, `/markets/${sampleMarket.id}`);
+      await request('POST /markets/route-plan (Item 7: Backend Route & Haversine Distance)', '/markets/route-plan', {
+        method: 'POST',
+        body: JSON.stringify({
+          lat: 33.72,
+          lng: 73.06,
+          marketId: sampleMarket.id
+        })
+      });
     }
 
     const newMarketRes = await request('POST /markets', '/markets', {
@@ -192,13 +200,18 @@ const testSuite = async () => {
       });
     }
 
-    // 5. FARMERS ENDPOINTS
-    console.log('\n--- 🧑‍🌾 FARMERS ENDPOINTS ---');
+    // 5. FARMERS ENDPOINTS & ITEM 1 (FEATURED FARMER ON HOME)
+    console.log('\n--- 🧑‍🌾 FARMERS ENDPOINTS & ITEM 1 (FEATURED FARMER) ---');
     const farmersRes = await request('GET /farmers', '/farmers');
     const sampleFarmer = farmersRes.data?.[0];
     if (sampleFarmer) {
       await request(`GET /farmers/${sampleFarmer.id}`, `/farmers/${sampleFarmer.id}`);
       await request(`GET /farmers/profile/${sampleFarmer.id}`, `/farmers/profile/${sampleFarmer.id}`);
+      await request(`PATCH /farmers/${sampleFarmer.id}/featured (Item 1: Featured Farmer)`, `/farmers/${sampleFarmer.id}/featured`, {
+        method: 'PATCH',
+        body: JSON.stringify({ featured: true })
+      });
+      await request('GET /farmers?featured=true', '/farmers?featured=true');
     }
 
     // 6. ORDERS ENDPOINTS
@@ -261,20 +274,95 @@ const testSuite = async () => {
       })
     });
 
-    // 9. USERS ENDPOINTS
-    console.log('\n--- 👤 USERS ENDPOINTS ---');
+    // 9. USERS ENDPOINTS & ITEM 4 (COMPARE LIST) & ITEM 8 (PREFERENCES)
+    console.log('\n--- 👤 USERS ENDPOINTS (FAVORITES, COMPARE & PREFERENCES) ---');
     await request(`GET /users/${currentUserId}/favorites`, `/users/${currentUserId}/favorites`);
     await request(`PATCH /users/${currentUserId}/favorites`, `/users/${currentUserId}/favorites`, {
       method: 'PATCH',
       body: JSON.stringify({ itemId: 'p-1' })
     });
+    // Item 4: Compare
+    await request(`POST /users/${currentUserId}/compare (Item 4: Add to Compare)`, `/users/${currentUserId}/compare`, {
+      method: 'POST',
+      body: JSON.stringify({ productId: 'p-1' })
+    });
+    await request(`GET /users/${currentUserId}/compare (Item 4: Get Compare)`, `/users/${currentUserId}/compare`);
+    await request(`DELETE /users/${currentUserId}/compare (Item 4: Clear Compare)`, `/users/${currentUserId}/compare`, {
+      method: 'DELETE'
+    });
+    // Item 8: Preferences
+    await request(`GET /users/${currentUserId}/preferences (Item 8: Get Preferences)`, `/users/${currentUserId}/preferences`);
+    await request(`PUT /users/${currentUserId}/preferences (Item 8: Update Theme/Prefs)`, `/users/${currentUserId}/preferences`, {
+      method: 'PUT',
+      body: JSON.stringify({ theme: 'dark', notificationsEnabled: true })
+    });
+
     await request(`GET /users/${currentUserId}/notifications`, `/users/${currentUserId}/notifications`);
     await request(`PATCH /users/${currentUserId}/notifications/read-all`, `/users/${currentUserId}/notifications/read-all`, {
       method: 'PATCH'
     });
 
-    // 10. SUBSCRIPTIONS ENDPOINTS
-    console.log('\n--- 📬 SUBSCRIPTIONS ENDPOINTS ---');
+    // 10. ITEM 2: CATEGORY MANAGEMENT ENDPOINTS
+    console.log('\n--- 🏷️ ITEM 2: CATEGORIES API ---');
+    const catListRes = await request('GET /categories', '/categories');
+    const catCreateRes = await request('POST /categories', '/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Automated Test Herbs', description: 'Fresh garden herbs' })
+    });
+    const createdCatId = catCreateRes.data?.id;
+    if (createdCatId) {
+      await request(`PUT /categories/${createdCatId}`, `/categories/${createdCatId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ description: 'Updated herbs description' })
+      });
+      await request(`DELETE /categories/${createdCatId}`, `/categories/${createdCatId}`, {
+        method: 'DELETE'
+      });
+    }
+
+    // 11. ITEM 3: REPORTS API & SERVER-SIDE CSV GENERATION
+    console.log('\n--- 📊 ITEM 3: REPORTS API & CSV GENERATION ---');
+    await request('GET /reports', '/reports');
+    await request('POST /reports/generate (Market activity report)', '/reports/generate', {
+      method: 'POST',
+      body: JSON.stringify({ reportType: 'Market activity report' })
+    });
+    await request('POST /reports/generate (Farmer revenue summary)', '/reports/generate', {
+      method: 'POST',
+      body: JSON.stringify({ reportType: 'Farmer revenue summary' })
+    });
+    await request('GET /reports/export/Market%20activity%20report (CSV Stream)', '/reports/export/Market%20activity%20report');
+
+    // 12. ITEM 5: SERVER-SIDE CART PERSISTENCE API
+    console.log('\n--- 🛒 ITEM 5: SERVER CART PERSISTENCE API ---');
+    await request(`POST /cart/${currentUserId} (Save Cart)`, `/cart/${currentUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        items: [
+          { productId: 'p-1', quantity: 3, marketId: 'm-1' },
+          { productId: 'p-2', quantity: 1, marketId: 'm-1' }
+        ]
+      })
+    });
+    await request(`GET /cart/${currentUserId} (Get Cart with Populated Products)`, `/cart/${currentUserId}`);
+    await request(`DELETE /cart/${currentUserId} (Clear Cart)`, `/cart/${currentUserId}`, {
+      method: 'DELETE'
+    });
+
+    // 13. ITEM 6: AI CHATBOT BACKEND ENDPOINT
+    console.log('\n--- 🤖 ITEM 6: AI CHATBOT API ---');
+    await request('GET /ai/suggestions', '/ai/suggestions');
+    await request('POST /ai/chat (Market Timings Query)', '/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message: 'What are the market timings for this Saturday?' })
+    });
+    await request('POST /ai/chat (Product Search Query)', '/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message: 'Do you have fresh tomatoes available?' })
+    });
+
+    // 14. SUBSCRIPTIONS & ANNOUNCEMENTS
+    console.log('\n--- 📬 SUBSCRIPTIONS & ANNOUNCEMENTS ---');
     await request('GET /subscriptions', '/subscriptions');
     await request('POST /subscriptions', '/subscriptions', {
       method: 'POST',
@@ -283,9 +371,6 @@ const testSuite = async () => {
         productId: sampleProduct?.id || 'p-1'
       })
     });
-
-    // 11. ANNOUNCEMENTS ENDPOINTS
-    console.log('\n--- 📢 ANNOUNCEMENTS ENDPOINTS ---');
     await request('POST /announcements', '/announcements', {
       method: 'POST',
       body: JSON.stringify({
@@ -293,7 +378,7 @@ const testSuite = async () => {
       })
     });
 
-    // 12. ADMIN ENDPOINTS
+    // 15. ADMIN ENDPOINTS
     console.log('\n--- 🛡️ ADMIN ENDPOINTS ---');
     await request('GET /admin/dashboard', '/admin/dashboard');
     await request('GET /admin/users', '/admin/users');
@@ -302,9 +387,13 @@ const testSuite = async () => {
         method: 'PATCH',
         body: JSON.stringify({ status: 'approved' })
       });
+      await request(`PATCH /admin/farmers/${sampleFarmer.id}/featured (Admin Feature Farmer)`, `/admin/farmers/${sampleFarmer.id}/featured`, {
+        method: 'PATCH',
+        body: JSON.stringify({ featured: true })
+      });
     }
 
-    // 13. SNAPSHOT ENDPOINT
+    // 16. SNAPSHOT ENDPOINT
     console.log('\n--- 📸 SNAPSHOT ENDPOINT ---');
     const snapshotRes = await request('GET /snapshot', '/snapshot');
     if (snapshotRes.data) {

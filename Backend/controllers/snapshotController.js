@@ -6,10 +6,14 @@ const Order = require('../models/Order');
 const Review = require('../models/Review');
 const Notification = require('../models/Notification');
 const StockSubscription = require('../models/StockSubscription');
+const Category = require('../models/Category');
+const { ensureDefaultCategories } = require('./categoryController');
 
 const getSnapshot = async (req, res) => {
   try {
-    const [users, markets, farmers, products, reviews, orders, notifications, stockSubscriptions] = await Promise.all([
+    await ensureDefaultCategories();
+
+    const [users, markets, farmers, products, reviews, orders, notifications, stockSubscriptions, categories] = await Promise.all([
       User.find({}).select('-password').lean(),
       Market.find({}).lean(),
       Farmer.find({}).lean(),
@@ -17,10 +21,10 @@ const getSnapshot = async (req, res) => {
       Review.find({}).sort({ createdAt: -1 }).lean(),
       Order.find({}).sort({ createdAt: -1 }).lean(),
       Notification.find({}).sort({ createdDate: -1, createdAt: -1 }).lean(),
-      StockSubscription.find({}).lean()
+      StockSubscription.find({}).lean(),
+      Category.find({ isActive: true }).sort({ name: 1 }).lean()
     ]);
 
-    // Map IDs and normalize fields if needed
     const normalizedUsers = users.map(u => ({
       id: u.id || u._id.toString(),
       name: u.name || u.profile?.name || u.username,
@@ -30,6 +34,9 @@ const getSnapshot = async (req, res) => {
       address: u.address || u.profile?.address?.street || '',
       farmerId: u.farmerId || (u.role === 'farmer' ? u.id : undefined),
       favorites: u.favorites || [],
+      compareList: u.compareList || [],
+      cart: u.cart || [],
+      preferences: u.preferences || { theme: 'light', notificationsEnabled: true },
       status: u.status || (u.isActive ? 'active' : 'suspended')
     }));
 
@@ -59,6 +66,7 @@ const getSnapshot = async (req, res) => {
       rating: f.rating || 0,
       reviews: f.reviews || 0,
       years: f.years || 0,
+      featured: Boolean(f.featured),
       status: f.status || 'approved',
       bio: f.bio || '',
       specialties: f.specialties || [],
@@ -137,7 +145,8 @@ const getSnapshot = async (req, res) => {
       reviews: normalizedReviews,
       orders: normalizedOrders,
       notifications: normalizedNotifications,
-      stockSubscriptions: stockSubscriptions.map(s => ({ userId: s.userId, productId: s.productId }))
+      stockSubscriptions: stockSubscriptions.map(s => ({ userId: s.userId, productId: s.productId })),
+      categories: categories.map(c => ({ id: c.id, name: c.name, slug: c.slug }))
     });
   } catch (error) {
     console.error('Error fetching snapshot:', error);

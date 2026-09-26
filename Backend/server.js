@@ -64,6 +64,10 @@ const snapshotRoutes = require('./routes/snapshot');
 const notificationRoutes = require('./routes/notifications');
 const subscriptionRoutes = require('./routes/subscriptions');
 const announcementRoutes = require('./routes/announcements');
+const categoryRoutes = require('./routes/categories');
+const reportRoutes = require('./routes/reports');
+const cartRoutes = require('./routes/cart');
+const aiRoutes = require('./routes/ai');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -77,6 +81,10 @@ app.use('/api/snapshot', snapshotRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/announcements', announcementRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {

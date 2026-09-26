@@ -6,6 +6,19 @@ const Farmer = require('../models/Farmer');
 
 const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
+// Haversine Distance Formula in Kilometers
+const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Number((R * c).toFixed(2));
+};
+
 const getMarkets = async (req, res) => {
   try {
     const markets = await Market.find({}).sort({ name: 1 }).lean();
@@ -49,11 +62,89 @@ const getMarketById = async (req, res) => {
 
 const getNearbyMarkets = async (req, res) => {
   try {
-    const markets = await Market.find({}).lean();
+    const { lat, lng, latitude, longitude, radiusKm, day } = req.query;
+    const userLat = parseFloat(lat || latitude);
+    const userLng = parseFloat(lng || longitude);
+    const maxRadius = parseFloat(radiusKm) || 50; // default 50km
+
+    const query = {};
+    if (day) {
+      query.day = { $regex: new RegExp(day, 'i') };
+    }
+
+    const markets = await Market.find(query).lean();
+
+    if (!isNaN(userLat) && !isNaN(userLng)) {
+      const withDistance = markets.map(m => {
+        const mLat = m.lat || m.location?.latitude || 0;
+        const mLng = m.lng || m.location?.longitude || 0;
+        const distanceVal = calculateDistanceKm(userLat, userLng, mLat, mLng);
+        return {
+          ...m,
+          id: m.id || m._id.toString(),
+          calculatedDistanceKm: distanceVal,
+          distance: `${distanceVal} km`
+        };
+      })
+      .filter(m => m.calculatedDistanceKm <= maxRadius)
+      .sort((a, b) => a.calculatedDistanceKm - b.calculatedDistanceKm);
+
+      return res.json(withDistance);
+    }
+
     res.json(markets);
   } catch (error) {
     console.error('Get nearby markets error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const planRoute = async (req, res) => {
+  try {
+    const { lat, lng, marketId } = req.body;
+    const userLat = parseFloat(lat);
+    const userLng = parseFloat(lng);
+
+    const market = await Market.findOne(byId(marketId)).lean();
+    if (!market) {
+      return res.status(404).json({ message: 'Market not found' });
+    }
+
+    const mLat = market.lat || market.location?.latitude || 0;
+    const mLng = market.lng || market.location?.longitude || 0;
+
+    let distanceKm = null;
+    let estimatedTravelMinutes = null;
+
+    if (!isNaN(userLat) && !isNaN(userLng)) {
+      distanceKm = calculateDistanceKm(userLat, userLng, mLat, mLng);
+      estimatedTravelMinutes = Math.round((distanceKm / 35) * 60); // approx city driving
+    }
+
+    // Get farmers at this market
+    const farmers = await Farmer.find({ marketIds: market.id, status: 'approved' }).lean();
+
+    res.json({
+      market: {
+        id: market.id,
+        name: market.name,
+        address: market.address,
+        day: market.day,
+        hours: market.hours || `${market.openingTime} — ${market.closingTime}`,
+        lat: mLat,
+        lng: mLng
+      },
+      directions: {
+        distanceKm,
+        estimatedTravelMinutes,
+        googleMapsUrl: `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(market.address || `${mLat},${mLng}`)}`
+      },
+      farmersCount: farmers.length,
+      farmers: farmers.map(f => ({ id: f.id, name: f.name, owner: f.owner, specialties: f.specialties }))
+    });
+  } catch (error) {
+    console.error('Plan route error:', error);
+    res.status(500).json({ message: 'Server error planning route' });
   }
 };
 
@@ -127,6 +218,7 @@ module.exports = {
   getMarkets,
   getMarketById,
   getNearbyMarkets,
+  planRoute,
   createMarket: createOrUpdateMarket,
   updateMarket: createOrUpdateMarket,
   deleteMarket
