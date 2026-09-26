@@ -1,6 +1,9 @@
+const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
 const getReviews = async (req, res) => {
   try {
@@ -17,7 +20,7 @@ const createReview = async (req, res) => {
     const payload = req.body;
     const { orderId, productId, customerId, rating, comment, customer } = payload;
 
-    const order = await Order.findOne({ $or: [{ id: orderId }, { _id: orderId }] });
+    const order = await Order.findOne(byId(orderId));
     if (!order || order.status !== 'completed') {
       return res.status(400).json({ message: 'Reviews require a completed order containing this product.' });
     }
@@ -49,7 +52,7 @@ const createReview = async (req, res) => {
     await review.save();
 
     // Update product rating and reviews count
-    const product = await Product.findOne({ $or: [{ id: productId }, { _id: productId }] });
+    const product = await Product.findOne(byId(productId));
     if (product) {
       const allProductReviews = await Review.find({ productId });
       const avg = allProductReviews.reduce((sum, r) => sum + r.rating, 0) / allProductReviews.length;
@@ -77,7 +80,7 @@ const respondToReview = async (req, res) => {
       return res.status(400).json({ message: 'Enter a reply to a review on your product.' });
     }
 
-    const review = await Review.findOne({ $or: [{ id: reviewId }, { _id: reviewId }] });
+    const review = await Review.findOne(byId(reviewId));
     if (!review) {
       return res.status(404).json({ message: 'Review not found' });
     }
@@ -96,7 +99,7 @@ const respondToReview = async (req, res) => {
 const deleteReview = async (req, res) => {
   try {
     const reviewId = req.params.id;
-    await Review.findOneAndDelete({ $or: [{ id: reviewId }, { _id: reviewId }] });
+    await Review.findOneAndDelete(byId(reviewId));
     res.json({ message: 'Review deleted successfully', success: true });
   } catch (error) {
     console.error('Delete review error:', error);

@@ -1,6 +1,9 @@
+const mongoose = require('mongoose');
 const Farmer = require('../models/Farmer');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
 const getFarmers = async (req, res) => {
   try {
@@ -29,7 +32,7 @@ const getFarmers = async (req, res) => {
 
 const getFarmerById = async (req, res) => {
   try {
-    const farmer = await Farmer.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean();
+    const farmer = await Farmer.findOne(byId(req.params.id)).lean();
     if (!farmer) {
       return res.status(404).json({ message: 'Farmer not found' });
     }
@@ -45,8 +48,8 @@ const getFarmerById = async (req, res) => {
 
 const updateFarmerProfile = async (req, res) => {
   try {
-    const farmerId = req.params.id || req.user.farmerId || req.user.id;
-    const farmer = await Farmer.findOne({ $or: [{ id: farmerId }, { userId: req.user.id }] });
+    const farmerId = req.params.id || req.user?.farmerId || req.user?.id;
+    const farmer = await Farmer.findOne({ $or: [{ id: farmerId }, { userId: req.user?.id }] });
     if (!farmer) {
       return res.status(404).json({ message: 'Farmer profile not found' });
     }
@@ -62,7 +65,7 @@ const updateFarmerProfile = async (req, res) => {
 
 const getFarmerOrders = async (req, res) => {
   try {
-    const farmerId = req.user.farmerId || req.user.id;
+    const farmerId = req.user?.farmerId || req.user?.id;
     const orders = await Order.find({ farmerId }).sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {

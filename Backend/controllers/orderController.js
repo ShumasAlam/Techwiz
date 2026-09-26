@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
@@ -5,19 +6,21 @@ const Market = require('../models/Market');
 const Farmer = require('../models/Farmer');
 const Notification = require('../models/Notification');
 
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
+
 const createOrder = async (req, res) => {
   try {
     const payload = req.body;
     const { customerId, marketId, pickupDate, pickupSlot, items } = payload;
 
-    const market = await Market.findOne({ $or: [{ id: marketId }, { _id: marketId }] });
+    const market = await Market.findOne(byId(marketId));
     if (!market || !pickupDate || !pickupSlot || !items?.length) {
       return res.status(400).json({ message: 'Choose a valid market and pickup window.' });
     }
 
     const groups = new Map();
     for (const line of items) {
-      const product = await Product.findOne({ $or: [{ id: line.productId }, { _id: line.productId }] });
+      const product = await Product.findOne(byId(line.productId));
       if (!product || line.quantity < 1 || product.stock < line.quantity || !product.available) {
         return res.status(400).json({ message: `${product?.name || 'An item'} is no longer available in the requested quantity.` });
       }
@@ -47,7 +50,7 @@ const createOrder = async (req, res) => {
 
       // Deduct stock
       for (const line of groupItems) {
-        const product = await Product.findOne({ id: line.productId });
+        const product = await Product.findOne(byId(line.productId));
         if (product) {
           product.stock -= line.quantity;
           product.stockQuantity = product.stock;
@@ -59,7 +62,7 @@ const createOrder = async (req, res) => {
 
       const order = new Order({
         id: orderId,
-        customerId: customerId || req.user?.id,
+        customerId: customerId || req.user?.id || 'u-1',
         farmerId,
         marketId: market.id || marketId,
         pickupDate,
@@ -78,7 +81,7 @@ const createOrder = async (req, res) => {
       // Create reminder notification
       await Notification.create({
         id: 'n-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-        userId: customerId || req.user?.id,
+        userId: customerId || req.user?.id || 'u-1',
         type: 'reminder',
         text: `Pickup reminder: collect ${order.id} at ${market.name} on ${pickupDate}, ${pickupSlot}. Pay at pickup.`,
         orderId: order.id,
@@ -98,14 +101,14 @@ const createBatchOrders = async (req, res) => {
     const payload = req.body;
     const { customerId, marketId, pickupDate, pickupSlot, items } = payload;
 
-    const market = await Market.findOne({ $or: [{ id: marketId }, { _id: marketId }] });
+    const market = await Market.findOne(byId(marketId));
     if (!market || !pickupDate || !pickupSlot || !items?.length) {
       return res.status(400).json({ message: 'Choose a valid market and pickup window.' });
     }
 
     const groups = new Map();
     for (const line of items) {
-      const product = await Product.findOne({ $or: [{ id: line.productId }, { _id: line.productId }] });
+      const product = await Product.findOne(byId(line.productId));
       if (!product || line.quantity < 1 || product.stock < line.quantity || !product.available) {
         return res.status(400).json({ message: `${product?.name || 'An item'} is no longer available in the requested quantity.` });
       }
@@ -131,7 +134,7 @@ const createBatchOrders = async (req, res) => {
 
       // Deduct stock
       for (const line of groupItems) {
-        const product = await Product.findOne({ id: line.productId });
+        const product = await Product.findOne(byId(line.productId));
         if (product) {
           product.stock -= line.quantity;
           product.stockQuantity = product.stock;
@@ -143,7 +146,7 @@ const createBatchOrders = async (req, res) => {
 
       const order = new Order({
         id: orderId,
-        customerId: customerId || req.user?.id,
+        customerId: customerId || req.user?.id || 'u-1',
         farmerId,
         marketId: market.id || marketId,
         pickupDate,
@@ -162,7 +165,7 @@ const createBatchOrders = async (req, res) => {
       // Create reminder notification
       await Notification.create({
         id: 'n-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-        userId: customerId || req.user?.id,
+        userId: customerId || req.user?.id || 'u-1',
         type: 'reminder',
         text: `Pickup reminder: collect ${order.id} at ${market.name} on ${pickupDate}, ${pickupSlot}. Pay at pickup.`,
         orderId: order.id,
@@ -201,7 +204,7 @@ const getOrders = async (req, res) => {
 
 const getOrderById = async (req, res) => {
   try {
-    const order = await Order.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean();
+    const order = await Order.findOne(byId(req.params.id)).lean();
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
@@ -219,7 +222,7 @@ const updateOrderStatus = async (req, res) => {
   try {
     const { status, orderStatus } = req.body;
     const newStatus = status || orderStatus;
-    const order = await Order.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] });
+    const order = await Order.findOne(byId(req.params.id));
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
@@ -240,7 +243,7 @@ const updateOrderStatus = async (req, res) => {
     if (['declined', 'cancelled'].includes(newStatus)) {
       // Restore stock
       for (const item of order.items) {
-        const product = await Product.findOne({ id: item.productId });
+        const product = await Product.findOne(byId(item.productId));
         if (product) {
           product.stock += item.quantity;
           product.stockQuantity = product.stock;
@@ -275,13 +278,13 @@ const updateOrderStatus = async (req, res) => {
 
 const cancelOrder = async (req, res) => {
   try {
-    const order = await Order.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] });
+    const order = await Order.findOne(byId(req.params.id));
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
     for (const item of order.items) {
-      const product = await Product.findOne({ id: item.productId });
+      const product = await Product.findOne(byId(item.productId));
       if (product) {
         product.stock += item.quantity;
         product.stockQuantity = product.stock;

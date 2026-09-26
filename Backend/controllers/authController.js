@@ -1,10 +1,16 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Farmer = require('../models/Farmer');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'marketlink-secret-key-2024';
+const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
+
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'marketlink_secret_key_default_2024', {
-    expiresIn: process.env.JWT_EXPIRE || '7d'
+  return jwt.sign({ id }, JWT_SECRET, {
+    expiresIn: JWT_EXPIRE
   });
 };
 
@@ -109,7 +115,7 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Email or password is incorrect.' });
     }
 
-    const token = generateToken(user.id || user._id);
+    const token = generateToken(user.id || user._id.toString());
 
     const safeUser = {
       id: user.id || user._id.toString(),
@@ -136,7 +142,7 @@ const login = async (req, res) => {
 
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findOne({ $or: [{ id: req.user.id }, { _id: req.user._id }] }).select('-password');
+    const user = await User.findOne(byId(req.user.id || req.user._id)).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user);
   } catch (error) {
@@ -148,7 +154,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const updates = req.body;
-    const user = await User.findOne({ $or: [{ id: req.user.id }, { _id: req.user._id }] });
+    const user = await User.findOne(byId(req.user.id || req.user._id));
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (updates.name) user.name = updates.name;

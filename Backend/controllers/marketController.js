@@ -1,7 +1,10 @@
+const mongoose = require('mongoose');
 const Market = require('../models/Market');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Farmer = require('../models/Farmer');
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
 const getMarkets = async (req, res) => {
   try {
@@ -30,7 +33,7 @@ const getMarkets = async (req, res) => {
 
 const getMarketById = async (req, res) => {
   try {
-    const market = await Market.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean();
+    const market = await Market.findOne(byId(req.params.id)).lean();
     if (!market) {
       return res.status(404).json({ message: 'Market not found' });
     }
@@ -46,10 +49,6 @@ const getMarketById = async (req, res) => {
 
 const getNearbyMarkets = async (req, res) => {
   try {
-    const { lat, lng, latitude, longitude } = req.query;
-    const targetLat = parseFloat(lat || latitude);
-    const targetLng = parseFloat(lng || longitude);
-
     const markets = await Market.find({}).lean();
     res.json(markets);
   } catch (error) {
@@ -61,28 +60,29 @@ const getNearbyMarkets = async (req, res) => {
 const createOrUpdateMarket = async (req, res) => {
   try {
     const payload = req.body;
-    if (!payload.name?.trim() || !payload.day?.trim()) {
+    if (!payload.name?.trim() && !req.params.id) {
       return res.status(400).json({ message: 'Enter market details and valid opening/closing schedule.' });
     }
 
-    const marketId = payload.id || req.params.id || ('m-' + Date.now().toString(36));
-    let market = await Market.findOne({ $or: [{ id: marketId }, { _id: payload.id || req.params.id }] });
+    const marketId = req.params.id || payload.id || ('m-' + Date.now().toString(36));
+    let market = await Market.findOne(byId(marketId));
 
-    const hours = payload.hours || (payload.openingTime && payload.closingTime ? `${payload.openingTime} — ${payload.closingTime}` : '');
+    const hours = payload.hours || (payload.openingTime && payload.closingTime ? `${payload.openingTime} — ${payload.closingTime}` : (market?.hours || ''));
 
     if (market) {
       Object.assign(market, payload, { hours });
       await market.save();
+      return res.status(200).json(market);
     } else {
       market = new Market({
         id: marketId,
         name: payload.name,
-        day: payload.day,
+        day: payload.day || 'Saturday',
         date: payload.date || 'Weekly',
-        hours,
-        openingTime: payload.openingTime || '',
-        closingTime: payload.closingTime || '',
-        address: payload.address,
+        hours: hours || '08:00 — 14:00',
+        openingTime: payload.openingTime || '08:00',
+        closingTime: payload.closingTime || '14:00',
+        address: payload.address || 'Market Location',
         distance: payload.distance || '',
         stalls: payload.stalls || 0,
         lat: Number(payload.lat) || 0,
@@ -91,9 +91,8 @@ const createOrUpdateMarket = async (req, res) => {
         image: payload.image || (req.file ? `/uploads/${req.file.filename}` : '')
       });
       await market.save();
+      return res.status(201).json(market);
     }
-
-    res.status(market.isNew ? 201 : 200).json(market);
   } catch (error) {
     console.error('Save market error:', error);
     res.status(500).json({ message: error.message || 'Server error saving market' });
@@ -112,7 +111,7 @@ const deleteMarket = async (req, res) => {
       return res.status(400).json({ message: 'Complete or cancel active pickups before deleting this market.' });
     }
 
-    await Market.findOneAndDelete({ $or: [{ id: marketId }, { _id: marketId }] });
+    await Market.findOneAndDelete(byId(marketId));
 
     await Product.updateMany({ marketIds: marketId }, { $pull: { marketIds: marketId } });
     await Farmer.updateMany({ marketIds: marketId }, { $pull: { marketIds: marketId } });

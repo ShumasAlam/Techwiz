@@ -1,4 +1,7 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
 const toggleFavorite = async (req, res) => {
   try {
@@ -9,7 +12,7 @@ const toggleFavorite = async (req, res) => {
       return res.status(400).json({ message: 'Item ID is required' });
     }
 
-    const user = await User.findOne({ $or: [{ id: userId }, { _id: userId }] });
+    const user = await User.findOne(byId(userId));
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -42,7 +45,7 @@ const toggleFavorite = async (req, res) => {
 const getFavorites = async (req, res) => {
   try {
     const userId = req.params.userId || req.user?.id;
-    const user = await User.findOne({ $or: [{ id: userId }, { _id: userId }] }).lean();
+    const user = await User.findOne(byId(userId)).lean();
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user.favorites || []);
   } catch (error) {

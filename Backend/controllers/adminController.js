@@ -1,9 +1,12 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const Market = require('../models/Market');
 const Review = require('../models/Review');
 const Farmer = require('../models/Farmer');
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
 const getDashboardStats = async (req, res) => {
   try {
@@ -41,7 +44,7 @@ const updateFarmerStatus = async (req, res) => {
     const { status } = req.body;
     const farmerId = req.params.id;
 
-    const farmer = await Farmer.findOne({ $or: [{ id: farmerId }, { _id: farmerId }] });
+    const farmer = await Farmer.findOne(byId(farmerId));
     if (!farmer) {
       return res.status(404).json({ message: 'Farmer not found' });
     }
@@ -52,7 +55,7 @@ const updateFarmerStatus = async (req, res) => {
     // Also update associated user if exists
     if (farmer.userId) {
       await User.findOneAndUpdate(
-        { $or: [{ id: farmer.userId }, { _id: farmer.userId }] },
+        byId(farmer.userId),
         { status: status === 'approved' ? 'approved' : status }
       );
     }
@@ -69,7 +72,7 @@ const updateUserStatus = async (req, res) => {
     const { status } = req.body;
     const userId = req.params.id;
 
-    const user = await User.findOne({ $or: [{ id: userId }, { _id: userId }] });
+    const user = await User.findOne(byId(userId));
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }

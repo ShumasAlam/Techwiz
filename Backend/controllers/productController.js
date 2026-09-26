@@ -1,7 +1,10 @@
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const Farmer = require('../models/Farmer');
 const Notification = require('../models/Notification');
 const StockSubscription = require('../models/StockSubscription');
+
+const byId = (id) => mongoose.isValidObjectId(id) ? { $or: [{ id }, { _id: id }] } : { id };
 
 const getProducts = async (req, res) => {
   try {
@@ -41,7 +44,7 @@ const getProducts = async (req, res) => {
 
 const getProductById = async (req, res) => {
   try {
-    const product = await Product.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] }).lean();
+    const product = await Product.findOne(byId(req.params.id)).lean();
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
@@ -58,7 +61,8 @@ const getProductById = async (req, res) => {
 const createProduct = async (req, res) => {
   try {
     const payload = req.body;
-    const farmer = await Farmer.findOne({ id: payload.farmerId });
+    const farmerId = payload.farmerId || req.user?.farmerId || req.user?.id;
+    const farmer = await Farmer.findOne(byId(farmerId));
     if (farmer && farmer.status !== 'approved') {
       return res.status(400).json({ message: 'Your farmer profile must be approved before publishing products.' });
     }
@@ -68,7 +72,7 @@ const createProduct = async (req, res) => {
 
     const product = new Product({
       id: payload.id || productId,
-      farmerId: payload.farmerId,
+      farmerId: farmerId || 'f-1',
       marketIds: payload.marketIds || [],
       name: payload.name,
       category: payload.category,
@@ -102,7 +106,7 @@ const createProduct = async (req, res) => {
 
 const updateProduct = async (req, res) => {
   try {
-    const product = await Product.findOne({ $or: [{ id: req.params.id }, { _id: req.params.id }] });
+    const product = await Product.findOne(byId(req.params.id));
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
@@ -147,7 +151,7 @@ const updateProduct = async (req, res) => {
 
 const deleteProduct = async (req, res) => {
   try {
-    const result = await Product.findOneAndDelete({ $or: [{ id: req.params.id }, { _id: req.params.id }] });
+    const result = await Product.findOneAndDelete(byId(req.params.id));
     if (!result) {
       return res.status(404).json({ message: 'Product not found' });
     }
@@ -160,7 +164,8 @@ const deleteProduct = async (req, res) => {
 
 const getFarmerProducts = async (req, res) => {
   try {
-    const products = await Product.find({ farmerId: req.user.farmerId || req.user.id });
+    const farmerId = req.user.farmerId || req.user.id;
+    const products = await Product.find({ $or: [{ farmerId }, { farmerId: req.user.id }] });
     res.json(products);
   } catch (error) {
     console.error('Get farmer products error:', error);
