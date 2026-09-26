@@ -1,0 +1,6 @@
+version: 0.1
+build:
+  - cd Frontend && npm ci && npm run build
+  - cd Backend && npm ci
+start:
+  - node Backend/server.js
