@@ -1,5 +1,31 @@
 // Demo data import removed
 import { uid } from '../utils/helpers'
+import tomatoes from '../assets/heirloom-tomatoes.jpg'
+import carrots from '../assets/rainbow-carrots.jpg'
+import sourdough from '../assets/sourdough.jpg'
+import marketCrate from '../assets/market-crate.jpg'
+
+// Map product names/categories to local image assets as fallbacks
+const imageKeywords = [
+  { match: /tomato/i, image: tomatoes },
+  { match: /carrot/i, image: carrots },
+  { match: /spinach|palak|greens|kale|herbs|basil/i, image: marketCrate },
+  { match: /potato/i, image: carrots },
+  { match: /onion/i, image: carrots },
+  { match: /sourdough|bread|bun|biscuit|bakery/i, image: sourdough },
+  { match: /apple|orange|citrus|mango|strawberr|watermelon|banana|fruit/i, image: marketCrate },
+  { match: /egg/i, image: sourdough },
+  { match: /milk|cheese|butter|yogurt|dairy/i, image: sourdough },
+  { match: /honey|lentil/i, image: marketCrate },
+]
+const resolveFallbackImage = (product) => {
+  if (product.image && product.image !== '') return product.image
+  const text = `${product.name} ${product.category} ${product.subcategory || ''}`
+  for (const entry of imageKeywords) {
+    if (entry.match.test(text)) return entry.image
+  }
+  return marketCrate
+}
 
 const DB_KEY = 'marketlink_demo_db_v1'
 const API_URL = (import.meta.env.VITE_API_URL || 'https://techwiz-backend-gold.vercel.app/api').replace(/\/$/, '')
@@ -73,6 +99,7 @@ const localFirst = async (path, options, fallback) => {
 
 const hydrateDerivedFields = (db) => {
   db.products?.forEach((product) => {
+    product.image = resolveFallbackImage(product)
     const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(product.category)
     const stockedThisMorning = isFreshProduce && (product.harvestDaysAgo ?? 0) === 0 && (product.lastUpdatedMinutesAgo ?? 0) <= 360
     product.stockedThisMorning = stockedThisMorning
@@ -273,8 +300,14 @@ export const api = {
   // 4. PRODUCTS
   // ==========================================
   products: {
-    list: () => localFirst('/products', {}, () => readDB().products),
-    get: (id) => localFirst(`/products/${id}`, {}, () => readDB().products.find((item) => item.id === id)),
+    list: async () => {
+      const items = await localFirst('/products', {}, () => readDB().products)
+      return Array.isArray(items) ? items.map(p => ({ ...p, image: resolveFallbackImage(p) })) : items
+    },
+    get: async (id) => {
+      const item = await localFirst(`/products/${id}`, {}, () => readDB().products.find((item) => item.id === id))
+      return item ? { ...item, image: resolveFallbackImage(item) } : item
+    },
     create: (payload) => localFirst('/products', { method: 'POST', body: JSON.stringify(payload) }, () => {
       const db = readDB()
       const farmer = db.farmers.find((item) => item.id === payload.farmerId)
