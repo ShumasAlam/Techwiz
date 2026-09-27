@@ -102,6 +102,10 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/ai', aiRoutes);
 
+// Serve built frontend (copied into Backend/public by Railway start script)
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('API Error:', err.stack || err.message);
@@ -109,6 +113,17 @@ app.use((err, req, res, next) => {
     message: err.message || 'Something went wrong on the server!',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
+});
+
+// Catch-all: serve React index.html for any non-API route (SPA support)
+const fs = require('fs');
+const indexPath = path.join(publicDir, 'index.html');
+app.get('*', (req, res) => {
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).json({ message: 'Not found' });
+  }
 });
 
 app.listen(PORT, () => {

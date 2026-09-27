@@ -163,7 +163,7 @@ export const api = {
     console.warn('MarketLink live API snapshot unavailable; continuing with local data.', error.message)
     return readDB()
   }),
-  resetDemo: () => { const fresh = cloneSeedData(); writeDB(fresh); return wait(fresh) },
+
 
   // ==========================================
   // 1. HEALTH / STATUS

@@ -2,6 +2,7 @@ import tomatoes from '../assets/heirloom-tomatoes.jpg'
 import carrots from '../assets/rainbow-carrots.jpg'
 import sourdough from '../assets/sourdough.jpg'
 import marketCrate from '../assets/market-crate.jpg'
+import spinach from '../assets/spinach.jpg'
 
 // Helper to build a produce listing that participates in price comparison.
 // comparisonGroup safely identifies "same kind of product" across farmers,

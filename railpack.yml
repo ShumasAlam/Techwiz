@@ -1,6 +1,9 @@
-version: 0.1
+provider: node
 build:
-  - cd Frontend && npm ci && npm run build
-  - cd Backend && npm ci
+  command: |
+    cd Frontend && npm ci && npm run build
+    cd ../Backend && npm ci
+    mkdir -p Backend/public
+    cp -R Frontend/dist/* Backend/public/
 start:
-  - node Backend/server.js
+  command: node Backend/server.js

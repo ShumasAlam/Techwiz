@@ -5,8 +5,7 @@
   "main": "Backend/server.js",
   "scripts": {
     "start": "node Backend/server.js",
-    "prestart": "cd Backend && npm install --production",
-    "build": "cd Backend && npm install",
+    "build": "cd Frontend && npm ci && npm run build && cd ../Backend && npm ci && mkdir -p public && cp -R ../Frontend/dist/* public/",
     "dev:backend": "cd Backend && npm start",
     "dev:frontend": "cd Frontend && npm run dev",
     "seed": "cd Backend && npm run seed"
