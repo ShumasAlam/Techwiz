@@ -4,7 +4,6 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useCart } from '../../context/CartContext'
 import NotificationDropdown from '../shared/NotificationDropdown'
-import userLogo from '../../assets/userLogo.png'
 
 const links = [
   ['/', 'Home'],
@@ -29,7 +28,7 @@ export default function Navbar() {
   return (
     <header onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); setProfileOpen(false) } }} className={`site-nav ${onHero ? 'site-nav--hero' : ''}`}>
       <div className="nav-inner">
-        <Link to="/" className="brand" onClick={() => setOpen(false)}><img src={userLogo} alt="MarketLink logo" className="site-logo" /></Link>
+        <Link to="/" className="brand" onClick={() => setOpen(false)}><span><Leaf /></span><b>MarketLink</b></Link>
         <nav id="main-navigation" aria-label="Main navigation" className={open ? 'nav-links is-open' : 'nav-links'}>
           {links.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)}>{label}</NavLink>)}
           <div className="mobile-actions">

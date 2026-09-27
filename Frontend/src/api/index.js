@@ -1,11 +1,9 @@
-// Demo data import removed
 import { uid } from '../utils/helpers'
 import tomatoes from '../assets/heirloom-tomatoes.jpg'
 import carrots from '../assets/rainbow-carrots.jpg'
 import sourdough from '../assets/sourdough.jpg'
 import marketCrate from '../assets/market-crate.jpg'
 
-// Map product names/categories to local image assets as fallbacks
 const imageKeywords = [
   { match: /tomato/i, image: tomatoes },
   { match: /carrot/i, image: carrots },
@@ -27,8 +25,12 @@ const resolveFallbackImage = (product) => {
   return marketCrate
 }
 
-const DB_KEY = 'marketlink_demo_db_v1'
+const DB_KEY = 'marketlink_db_snapshot_v1'
 const API_URL = (import.meta.env.VITE_API_URL || 'https://techwiz-backend-gold.vercel.app/api').replace(/\/$/, '')
+const DEMO_USER_IDS = new Set(['u-customer', 'u-farmer', 'u-admin'])
+const isDemoProduct = (item) => /^p-\d+$/.test(item?.id || '')
+const isDemoFarmer = (item) => /^f-[1-5]$/.test(item?.id || '')
+const isDemoMarket = (item) => /^m-[1-3]$/.test(item?.id || '')
 
 const wait = (value, delay = 80) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
 
@@ -38,10 +40,7 @@ const readDB = () => {
     if (stored) {
       return JSON.parse(stored);
     }
-  } catch {
-    // ignore parse errors
-  }
-  // Return an empty structure; syncRemoteSnapshot will populate cache later
+  } catch {}
   return {
     users: [],
     markets: [],
@@ -63,7 +62,7 @@ const writeDB = (data) => {
 }
 
 const remote = async (path, options = {}) => {
-  if (!API_URL) throw new Error('Local demo mode')
+  if (!API_URL) throw new Error('Live API is not configured')
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('marketlink_token') : null
   const isFormData = options.body instanceof FormData
   const headers = {
@@ -80,7 +79,7 @@ const remote = async (path, options = {}) => {
     try {
       const body = await response.json()
       message = body.message || body.error || message
-    } catch { /* use default */ }
+    } catch {}
     const error = new Error(message)
     error.status = response.status
     throw error
@@ -93,11 +92,33 @@ const remote = async (path, options = {}) => {
 }
 
 const localFirst = async (path, options, fallback) => {
-  // Demo fallback removed; always use the live backend.
-  return await remote(path, options);
+  const result = await remote(path, options)
+  const method = (options.method || 'GET').toUpperCase()
+  if (!['GET', 'HEAD'].includes(method) && !path.startsWith('/auth/login')) {
+    void syncRemoteSnapshot().catch(() => {})
+  }
+  return result
 }
 
 const hydrateDerivedFields = (db) => {
+  db.stockSubscriptions ||= []
+  db.notifications ||= []
+  db.reviews ||= []
+  db.orders ||= []
+  db.users ||= []
+  db.markets ||= []
+  db.farmers ||= []
+  db.products ||= []
+
+  db.users = db.users.filter((user) => !DEMO_USER_IDS.has(user.id))
+  db.markets = db.markets.filter((market) => !isDemoMarket(market))
+  db.farmers = db.farmers.filter((farmer) => !isDemoFarmer(farmer))
+  db.products = db.products.filter((product) => !isDemoProduct(product) && db.farmers.some((farmer) => farmer.id === product.farmerId))
+  db.reviews = db.reviews.filter((review) => db.products.some((product) => product.id === review.productId))
+  db.orders = db.orders.filter((order) => db.farmers.some((farmer) => farmer.id === order.farmerId) && (!order.marketId || db.markets.some((market) => market.id === order.marketId)))
+  db.notifications = db.notifications.filter((notification) => !notification.userId || db.users.some((user) => user.id === notification.userId))
+  db.stockSubscriptions = db.stockSubscriptions.filter((subscription) => db.products.some((product) => product.id === subscription.productId))
+
   db.products?.forEach((product) => {
     product.image = resolveFallbackImage(product)
     const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(product.category)
@@ -107,16 +128,8 @@ const hydrateDerivedFields = (db) => {
     product.freshWindow = stockedThisMorning && product.expiresInHours <= 24
   })
   db.farmers?.forEach((farmer) => {
-    farmer.featured ??= ['f-1', 'f-2', 'f-3'].includes(farmer.id)
+    farmer.featured ??= false
   })
-  db.stockSubscriptions ||= []
-  db.notifications ||= []
-  db.reviews ||= []
-  db.orders ||= []
-  db.users ||= []
-  db.markets ||= []
-  db.farmers ||= []
-  db.products ||= []
   return db
 }
 
@@ -185,29 +198,21 @@ const reserveOrders = (db, payload) => {
 }
 
 export const api = {
-  mode: API_URL ? 'hybrid' : 'demo',
+  mode: 'live',
   syncRemoteSnapshot: () => syncRemoteSnapshot().catch((error) => {
-    console.warn('MarketLink live API snapshot unavailable; continuing with local data.', error.message)
+    console.warn('MarketLink live API snapshot unavailable; continuing with cached database snapshot.', error.message)
     return readDB()
   }),
 
-
-  // ==========================================
-  // 1. HEALTH / STATUS
-  // ==========================================
   health: {
     check: () => localFirst('/health', { method: 'GET' }, () => ({ status: 'ok', database: 'connected' })),
   },
-
-  // ==========================================
-  // 2. AUTHENTICATION
-  // ==========================================
   auth: {
     login: (email, password) => localFirst('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, () => {
       const user = readDB().users.find((item) => item.email.toLowerCase() === email.toLowerCase() && item.password === password)
       if (!user) throw new Error('Email or password is incorrect.')
       if (user.status === 'suspended') throw new Error('This account is suspended. Contact MarketLink support.')
-      return { token: `demo-${user.id}`, user: { ...user, password: undefined } }
+      return { token: `local-${user.id}`, user: { ...user, password: undefined } }
     }),
     register: (payload) => localFirst('/auth/register', { method: 'POST', body: JSON.stringify(payload) }, () => {
       const db = readDB()
@@ -224,7 +229,7 @@ export const api = {
         })
       }
       writeDB(db)
-      return { token: `demo-${user.id}`, user: { ...user, password: undefined } }
+      return { token: `local-${user.id}`, user: { ...user, password: undefined } }
     }),
     getProfile: () => localFirst('/auth/profile', { method: 'GET' }, () => {
       const db = readDB()
@@ -240,10 +245,6 @@ export const api = {
       return { user }
     }),
   },
-
-  // ==========================================
-  // 3. USERS (FAVORITES, COMPARE & PREFERENCES)
-  // ==========================================
   users: {
     toggleFavorite: (userId, itemId) => localFirst('/users/' + userId + '/favorites', { method: 'PATCH', body: JSON.stringify({ itemId }) }, () => {
       const db = readDB()
@@ -295,10 +296,6 @@ export const api = {
       return { preferences: user?.preferences }
     }),
   },
-
-  // ==========================================
-  // 4. PRODUCTS
-  // ==========================================
   products: {
     list: async () => {
       const items = await localFirst('/products', {}, () => readDB().products)
@@ -353,10 +350,6 @@ export const api = {
       return db.products.filter((p) => p.farmerId === user?.farmerId || p.farmerId === user?.id)
     }),
   },
-
-  // ==========================================
-  // 5. MARKETS
-  // ==========================================
   markets: {
     list: () => localFirst('/markets', {}, () => readDB().markets),
     get: (id) => localFirst(`/markets/${id}`, {}, () => readDB().markets.find((item) => item.id === id)),
@@ -369,7 +362,7 @@ export const api = {
       const db = readDB()
       if (!payload.name?.trim() || !payload.address?.trim() || !payload.day?.trim() || !payload.openingTime || !payload.closingTime || payload.openingTime >= payload.closingTime || !Number.isFinite(payload.lat) || Math.abs(payload.lat) > 90 || !Number.isFinite(payload.lng) || Math.abs(payload.lng) > 180) throw new Error('Enter market details, valid coordinates, and a closing time after opening.')
       const existing = db.markets.find((item) => item.id === payload.id)
-      const item = { ...existing, ...payload, id: existing?.id || uid('m'), hours: payload.openingTime + ' - ' + payload.closingTime, date: existing?.date || 'Weekly', stalls: existing?.stalls || 0, description: existing?.description || 'Local market pickup point.' }
+      const item = { ...existing, ...payload, id: existing?.id || uid('m'), mapUrl: payload.mapUrl || existing?.mapUrl || `https://www.google.com/maps?q=${payload.lat},${payload.lng}`, hours: payload.openingTime + ' - ' + payload.closingTime, date: existing?.date || 'Weekly', stalls: existing?.stalls || 0, description: existing?.description || 'Local market pickup point.' }
       if (existing) Object.assign(existing, item); else db.markets.push(item)
       writeDB(db)
       return item
@@ -384,10 +377,6 @@ export const api = {
       return true
     }),
   },
-
-  // ==========================================
-  // 6. FARMERS
-  // ==========================================
   farmers: {
     list: (featuredOnly = false) => localFirst(featuredOnly ? '/farmers?featured=true' : '/farmers', {}, () => {
       const farmers = readDB().farmers
@@ -416,10 +405,6 @@ export const api = {
       return db.orders.filter((o) => o.farmerId === user?.farmerId || o.farmerId === user?.id)
     }),
   },
-
-  // ==========================================
-  // 7. ORDERS
-  // ==========================================
   orders: {
     list: () => localFirst('/orders', {}, () => readDB().orders),
     get: (id) => localFirst(`/orders/${id}`, {}, () => readDB().orders.find((item) => item.id === id)),
@@ -447,10 +432,6 @@ export const api = {
       return { message: 'Order cancelled successfully', order }
     }),
   },
-
-  // ==========================================
-  // 8. REVIEWS
-  // ==========================================
   reviews: {
     list: () => localFirst('/reviews', {}, () => readDB().reviews),
     getByProduct: (productId) => localFirst(`/reviews/product/${productId}`, {}, () => readDB().reviews.filter((r) => r.productId === productId)),
@@ -487,10 +468,6 @@ export const api = {
       return true
     }),
   },
-
-  // ==========================================
-  // 9. ADMIN
-  // ==========================================
   admin: {
     getDashboard: () => localFirst('/admin/dashboard', { method: 'GET' }, () => {
       const db = readDB()
@@ -538,13 +515,9 @@ export const api = {
       return farmer
     }),
   },
-
-  // ==========================================
-  // 10. CATEGORIES
-  // ==========================================
   categories: {
     list: () => localFirst('/categories', { method: 'GET' }, () => {
-      const categories = ['Vegetables', 'Fruit', 'Bakery', 'Dairy', 'Eggs', 'Other Produce']
+      const categories = [...new Set(readDB().products.map((product) => product.category).filter(Boolean))]
       return categories.map((name, i) => ({ id: `cat-${i+1}`, name }))
     }),
     create: (name, description = '') => localFirst('/categories', { method: 'POST', body: JSON.stringify({ name, description }) }, () => {
@@ -554,10 +527,6 @@ export const api = {
       return { message: 'Category deleted', success: true }
     }),
   },
-
-  // ==========================================
-  // 11. REPORTS & CSV EXPORT
-  // ==========================================
   reports: {
     list: () => localFirst('/reports', { method: 'GET' }, () => []),
     generate: (reportType) => localFirst('/reports/generate', { method: 'POST', body: JSON.stringify({ reportType }) }, () => ({
@@ -568,10 +537,6 @@ export const api = {
       return remote(`/reports/export/${encodeURIComponent(reportType)}`)
     },
   },
-
-  // ==========================================
-  // 12. SERVER-SIDE CART PERSISTENCE
-  // ==========================================
   cart: {
     get: (userId) => localFirst(`/cart/${userId}`, { method: 'GET' }, () => {
       const user = readDB().users.find((u) => u.id === userId)
@@ -596,10 +561,6 @@ export const api = {
       return { success: true }
     }),
   },
-
-  // ==========================================
-  // 13. AI CHATBOT
-  // ==========================================
   ai: {
     chat: (message, history = []) => localFirst('/ai/chat', { method: 'POST', body: JSON.stringify({ message, history }) }, () => ({
       reply: "MarketLink AI: Local growers harvest weekly. Reserve your items and collect in person!",
@@ -611,10 +572,6 @@ export const api = {
       'How do I reserve and pay for my basket?'
     ]),
   },
-
-  // ==========================================
-  // 14. NOTIFICATIONS
-  // ==========================================
   notifications: {
     list: (userId) => localFirst(userId ? `/users/${userId}/notifications` : '/notifications', {}, () => {
       const db = readDB()
@@ -648,10 +605,6 @@ export const api = {
       return notification
     }),
   },
-
-  // ==========================================
-  // 15. SUBSCRIPTIONS & ANNOUNCEMENTS
-  // ==========================================
   subscriptions: {
     notifyMe: (userId, productId) => localFirst('/subscriptions', { method: 'POST', body: JSON.stringify({ userId, productId }) }, () => {
       const db = readDB()
@@ -672,10 +625,6 @@ export const api = {
       return { success: true }
     }),
   },
-
-  // ==========================================
-  // 16. SNAPSHOT
-  // ==========================================
   snapshot: () => readDB(),
 }
 

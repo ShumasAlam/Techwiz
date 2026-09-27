@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import ErrorBoundary from './components/shared/ErrorBoundary'
@@ -12,27 +12,28 @@ import api from './api'
 import { AuthProvider } from './context/AuthContext'
 import { CartProvider } from './context/CartContext'
 import { CompareProvider } from './context/CompareContext'
-import AdminDashboard from './pages/admin/AdminDashboard'
-import CartPage from './pages/customer/CartPage'
-import CheckoutPage from './pages/customer/PickupCheckoutPage'
-import CustomerDashboard from './pages/customer/CustomerDashboard'
-import CustomerOrderDetailPage from './pages/customer/CustomerOrderDetailPage'
-import FarmerDashboard from './pages/farmer/FarmerDashboard'
-import ProductFormPage from './pages/farmer/ProductFormPage'
-import AboutPage from './pages/public/AboutPage'
-import CollectionsPage from './pages/public/CollectionsPage'
-import ComparePage from './pages/public/ComparePage'
-import ContactPage from './pages/public/ContactPage'
-import FarmerDetailPage from './pages/public/FarmerDetailPage'
-import FarmersPage from './pages/public/FarmersPage'
-import HomePage from './pages/public/HomePage'
-import LoginPage from './pages/public/LoginPage'
-import MarketDetailPage from './pages/public/MarketDetailPage'
-import MarketsPage from './pages/public/MarketsPage'
-import PlanTripPage from './pages/public/PlanTripPage'
-import ProductDetailPage from './pages/public/ProductDetailPage'
-import ProductsPage from './pages/public/ProductsPage'
-import RegisterPage from './pages/public/RegisterPage'
+
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
+const CartPage = lazy(() => import('./pages/customer/CartPage'))
+const CheckoutPage = lazy(() => import('./pages/customer/PickupCheckoutPage'))
+const CustomerDashboard = lazy(() => import('./pages/customer/CustomerDashboard'))
+const CustomerOrderDetailPage = lazy(() => import('./pages/customer/CustomerOrderDetailPage'))
+const FarmerDashboard = lazy(() => import('./pages/farmer/FarmerDashboard'))
+const ProductFormPage = lazy(() => import('./pages/farmer/ProductFormPage'))
+const AboutPage = lazy(() => import('./pages/public/AboutPage'))
+const CollectionsPage = lazy(() => import('./pages/public/CollectionsPage'))
+const ComparePage = lazy(() => import('./pages/public/ComparePage'))
+const ContactPage = lazy(() => import('./pages/public/ContactPage'))
+const FarmerDetailPage = lazy(() => import('./pages/public/FarmerDetailPage'))
+const FarmersPage = lazy(() => import('./pages/public/FarmersPage'))
+const HomePage = lazy(() => import('./pages/public/HomePage'))
+const LoginPage = lazy(() => import('./pages/public/LoginPage'))
+const MarketDetailPage = lazy(() => import('./pages/public/MarketDetailPage'))
+const MarketsPage = lazy(() => import('./pages/public/MarketsPage'))
+const PlanTripPage = lazy(() => import('./pages/public/PlanTripPage'))
+const ProductDetailPage = lazy(() => import('./pages/public/ProductDetailPage'))
+const ProductsPage = lazy(() => import('./pages/public/ProductsPage'))
+const RegisterPage = lazy(() => import('./pages/public/RegisterPage'))
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -54,14 +55,36 @@ function AppShell() {
   }, [])
 
   useEffect(() => {
-    void api.syncRemoteSnapshot?.().then(() => refresh((value) => value + 1))
+    let mounted = true
+    let syncing = false
+    const sync = async () => {
+      if (syncing || document.hidden) return
+      syncing = true
+      try {
+        await api.syncRemoteSnapshot?.()
+        if (mounted) refresh((value) => value + 1)
+      } catch {} finally {
+        syncing = false
+      }
+    }
+    const syncWhenVisible = () => { if (!document.hidden) void sync() }
+    void sync()
+    const interval = setInterval(sync, 800)
+    window.addEventListener('focus', syncWhenVisible)
+    document.addEventListener('visibilitychange', syncWhenVisible)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+      window.removeEventListener('focus', syncWhenVisible)
+      document.removeEventListener('visibilitychange', syncWhenVisible)
+    }
   }, [])
 
   return <>
     <Loader done={loaded} />
     <ScrollToTop />
     {!immersive && !portal && <Navbar />}
-    <a className="skip-link" href="#page-content">Skip to content</a><div id="page-content" tabIndex={-1}><Routes>
+    <a className="skip-link" href="#page-content">Skip to content</a><div id="page-content" tabIndex={-1}><Suspense fallback={null}><Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/collections" element={<CollectionsPage />} />
       <Route path="/products" element={<ProductsPage key={search} />} />
@@ -85,7 +108,7 @@ function AppShell() {
       <Route path="/farmer/products/:id/edit" element={<ProtectedRoute role="farmer"><ProductFormPage /></ProtectedRoute>} />
       <Route path="/admin/dashboard" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
       <Route path="*" element={<HomePage />} />
-    </Routes></div>
+    </Routes></Suspense></div>
     {!immersive && !portal && <CompareDrawer />}
     {!immersive && !portal && <Footer />}
     {!immersive && !portal && <AIChatbot />}

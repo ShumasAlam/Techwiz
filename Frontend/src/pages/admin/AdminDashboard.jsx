@@ -30,7 +30,7 @@ import MarketManager from './MarketManager'
 const CATEGORY_SEED = ['Vegetables', 'Fruit', 'Bakery', 'Dairy', 'Eggs', 'Other Produce']
 const ANNOUNCEMENT_SEED = [
   { id: 'a-1', title: 'Saturday market opens at 8 AM sharp', date: '24 Sep 2026' },
-  { id: 'a-2', title: 'New reserved-order lane at DHA Evening Hall', date: '19 Sep 2026' },
+  { id: 'a-2', title: 'New reserved-order lane at evening market hall', date: '19 Sep 2026' },
 ]
 
 const tabs = [
@@ -295,7 +295,7 @@ export default function AdminDashboard() {
           </section>
         )}
 
-        {tab === 'reports' && <section className="reports-grid">{['Market activity report', 'Farmer revenue summary', 'Customer growth report', 'Inventory availability report'].map((report) => <article key={report}><Download /><h2>{report}</h2><p>Generated from current MarketLink demo data.</p><button className="btn btn--outline" onClick={() => downloadReport(report, db)}>Generate CSV</button></article>)}</section>}
+        {tab === 'reports' && <section className="reports-grid">{['Market activity report', 'Farmer revenue summary', 'Customer growth report', 'Inventory availability report'].map((report) => <article key={report}><Download /><h2>{report}</h2><p>Generated from current MarketLink data.</p><button className="btn btn--outline" onClick={() => downloadReport(report, db)}>Generate CSV</button></article>)}</section>}
       </section>
     </main>
   )

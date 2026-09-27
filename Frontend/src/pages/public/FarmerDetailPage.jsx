@@ -5,6 +5,7 @@ import api from '../../api'
 import ProductCard from '../../components/shared/ProductCard'
 import StarRating from '../../components/shared/StarRating'
 import { useAuth } from '../../context/AuthContext'
+import { marketDirectionsUrl } from '../../utils/maps'
 
 export default function FarmerDetailPage() {
   const { id } = useParams()
@@ -54,7 +55,7 @@ export default function FarmerDetailPage() {
               {heroProduct && <img src={heroProduct.image} alt={`${farmer.name} produce`} />}
               <div className="farmer-profile-card__body">
                 <span className={openToday ? 'status-pill status-pill--ready' : 'status-pill status-pill--pending'}>{openToday ? 'Open today' : 'See market days'}</span>
-                <div className="farmer-sign"><span>{farmer.initials}</span><div><strong>{farmer.owner}</strong><small>{farmer.name} · {primaryMarket?.address || farmer.liveLocation || 'Lahore'}</small></div></div>
+                <div className="farmer-sign"><span>{farmer.initials}</span><div><strong>{farmer.owner}</strong><small>{farmer.name} · {primaryMarket?.address || farmer.liveLocation || 'Local pickup'}</small></div></div>
                 <div className="farmer-profile-stats">
                   <span><b>{available.length}</b><small>In stock</small></span>
                   <span><b>{farmer.years}</b><small>Years</small></span>
@@ -70,7 +71,7 @@ export default function FarmerDetailPage() {
         <div className="shell farmer-profile-overview">
           <article><Star /><small>Rating</small><b>{farmer.rating.toFixed(1)} / 5</b><p>{farmer.reviews} customer reviews</p></article>
           <article><PackageCheck /><small>Current stock</small><b>{available.length} items</b><p>Updated by the grower</p></article>
-          <article><Store /><small>Specialties</small><b>{farmer.specialties.slice(0, 2).join(' · ') || 'Fresh produce'}</b><p>{farmer.years} years growing for Lahore</p></article>
+          <article><Store /><small>Specialties</small><b>{farmer.specialties.slice(0, 2).join(' · ') || 'Fresh produce'}</b><p>{farmer.years} years growing for local markets</p></article>
         </div>
       </section>
 
@@ -85,7 +86,7 @@ export default function FarmerDetailPage() {
       <section className="section section--sage section--compact">
         <div className="shell pickup-grid pickup-grid--refined">
           <div><p className="eyebrow">MARKETS & PICKUP</p><h2>Plan your visit.</h2><p>Collect at the farmer’s stall during market hours.</p></div>
-          <div>{markets.map((market) => <article key={market.id} className="pickup-card"><Link to={`/markets/${market.id}`} className="pickup-row"><span><CalendarDays /></span><div><small>{market.day}</small><h3>{market.name}</h3><p>{market.address}</p><p>{market.hours}</p></div><b>View</b></Link><a className="arrow-link" href={`https://www.openstreetmap.org/directions?to=${market.lat},${market.lng}`} target="_blank" rel="noreferrer">Directions <MapPin /></a></article>)}{!markets.length && <div className="empty-state"><MapPin /><h2>No pickup markets assigned yet.</h2></div>}</div>
+          <div>{markets.map((market) => <article key={market.id} className="pickup-card"><Link to={`/markets/${market.id}`} className="pickup-row"><span><CalendarDays /></span><div><small>{market.day}</small><h3>{market.name}</h3><p>{market.address}</p><p>{market.hours}</p></div><b>View</b></Link><a className="arrow-link" href={marketDirectionsUrl(market)} target="_blank" rel="noreferrer">Directions <MapPin /></a></article>)}{!markets.length && <div className="empty-state"><MapPin /><h2>No pickup markets assigned yet.</h2></div>}</div>
         </div>
       </section>
 

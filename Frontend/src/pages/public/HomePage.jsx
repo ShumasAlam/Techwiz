@@ -35,6 +35,15 @@ function sortMarketsForLocation(markets, userLocation, liveLocation) {
   })
 }
 
+function marketDateBadge(market) {
+  if (!market) return { top: 'Now', bottom: 'Open' }
+  if (!market.date || market.date.toLowerCase() === 'weekly') {
+    return { top: market.day?.slice(0, 3) || 'Every', bottom: 'Weekly' }
+  }
+  const [top, bottom = market.day?.slice(0, 3) || ''] = market.date.split(' ')
+  return { top, bottom }
+}
+
 function featureCardsFromData(db) {
   return db.products
     .filter((product) => product.available && product.stock > 0)
@@ -62,11 +71,12 @@ export default function HomePage() {
   const [produceQuery, setProduceQuery] = useState('')
   const [liveLocation, setLiveLocation] = useState(null)
   const navigate = useNavigate()
-  const categories = ['All harvest', 'Vegetables', 'Fruit', 'Dairy', 'Bakery']
+  const liveProducts = useMemo(() => db.products.filter((item) => item.available && item.stock > 0), [db.products])
+  const categories = useMemo(() => ['All harvest', ...new Set(db.products.map((item) => item.category).filter(Boolean))], [db.products])
   const products = useMemo(() => {
-    const freshWindow = db.products.filter((item) => item.available && item.freshWindow)
+    const freshWindow = liveProducts.filter((item) => item.freshWindow)
     return category === 'All harvest' ? freshWindow.slice(0, 4) : freshWindow.filter((item) => item.category === category).slice(0, 4)
-  }, [category, db.products])
+  }, [category, liveProducts])
   const seasonalProducts = useMemo(() => [...db.products].filter((item) => item.seasonal && item.available).sort((a, b) => a.id.localeCompare(b.id)).slice(0, 4), [db.products])
   const featureSlides = useMemo(() => featureCardsFromData(db), [db])
   const featuredFarmers = useMemo(() => {
@@ -76,7 +86,9 @@ export default function HomePage() {
       .slice(0, 3)
   }, [db.farmers])
   const nearbyMarkets = useMemo(() => sortMarketsForLocation(db.markets, location || user?.address, liveLocation), [db.markets, location, liveLocation, user?.address])
-  const mapTarget = liveLocation ? `${liveLocation.lat},${liveLocation.lng}` : `${nearbyMarkets[0]?.address || 'DHA Lahore'} farmers market`
+  const nextMarket = nearbyMarkets[0]
+  const nextMarketTime = nextMarket ? `${nextMarket.day}, ${nextMarket.openingTime || nextMarket.hours}` : 'No markets scheduled'
+  const mapTarget = liveLocation ? `${liveLocation.lat},${liveLocation.lng}` : `${nextMarket?.address || location || user?.address || 'farmers market'}`
   const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(mapTarget)}&z=13&output=embed`
   const toggleFavorite = (id) => setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   const useLiveLocation = () => {
@@ -96,7 +108,7 @@ export default function HomePage() {
         <div className="hero-vignette" />
         <div className="hero-content shell">
           <div className="hero-copy">
-            <p className="eyebrow eyebrow--light"><span /> Picked nearby. Ready when you are.</p>
+            <p className="eyebrow eyebrow--light"><span /> Fresh local stock, updated for pickup.</p>
             <h1>Know what's <em>fresh</em> before you go.</h1>
             <p className="hero-lede">See what local farmers picked today. Reserve your basket and collect it at the market, no wasted trips, no wilted surprises.</p>
             <div className="hero-gallery hero-gallery--mobile">
@@ -113,7 +125,7 @@ export default function HomePage() {
             <FeatureCarousel slides={featureSlides} />
           </div>
         </div>
-        <div className="next-market"><span><Clock3 /></span><div><small>NEXT MARKET OPENS</small><strong>Saturday, 8:00 AM</strong></div></div>
+        <div className="next-market"><span><Clock3 /></span><div><small>NEXT MARKET OPENS</small><strong>{nextMarketTime}</strong></div></div>
       </section>
 
       <section id="harvest" className="section section--paper section--compact">
@@ -134,7 +146,7 @@ export default function HomePage() {
 
       <section className="section section--sage section--compact">
         <div className="shell market-feature">
-          <Reveal className="market-list"><p className="eyebrow">NEAR YOU THIS WEEK</p><h2>Your market map, <em>made useful.</em></h2><p className="muted">Showing markets nearest to {location || user?.address || 'your area'}. See opening times, stalls and pickup points before leaving home.</p><div>{nearbyMarkets.map((market, index) => <Link key={market.id} to={`/markets/${market.id}`} className={index === 0 ? 'market-row is-active' : 'market-row'}><span className="market-date"><b>{market.date.split(' ')[0]}</b>{market.date.split(' ')[1]}</span><span><strong>{market.name}</strong><small>{market.hours} - {market.stalls} stalls</small></span><b>{market.distance}</b><ArrowRight /></Link>)}</div><div className="market-actions"><button className="btn btn--outline" type="button" onClick={useLiveLocation}><LocateFixed /> Use live location</button><Link className="btn btn--outline" to="/markets"><LocateFixed /> Explore every market</Link></div></Reveal>
+          <Reveal className="market-list"><p className="eyebrow">NEAR YOU THIS WEEK</p><h2>Your market map, <em>made useful.</em></h2><p className="muted">Showing markets nearest to {location || user?.address || 'your area'}. See opening times, stalls and pickup points before leaving home.</p><div>{nearbyMarkets.map((market, index) => { const badge = marketDateBadge(market); return <Link key={market.id} to={`/markets/${market.id}`} className={index === 0 ? 'market-row is-active' : 'market-row'}><span className="market-date"><b>{badge.top}</b><small>{badge.bottom}</small></span><span><strong>{market.name}</strong><small>{market.day} - {market.hours} - {market.stalls} stalls</small></span><b>{market.distance}</b><ArrowRight /></Link> })}</div><div className="market-actions"><button className="btn btn--outline" type="button" onClick={useLiveLocation}><LocateFixed /> Use live location</button><Link className="btn btn--outline" to="/markets"><LocateFixed /> Explore every market</Link></div></Reveal>
           <Reveal delay={150} className="google-map-panel">
             <iframe title="Nearby MarketLink markets on Google Maps" src={mapSrc} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
             <div className="map-card map-card--home"><MapPin /><span><small>Closest pickup area</small><b>{nearbyMarkets[0]?.name}</b></span></div>
@@ -175,7 +187,7 @@ export default function HomePage() {
                       </div>
                       <div className="farmer-sign">
                         <span>{farmer.initials}</span>
-                        <div><strong>{farmer.owner}</strong><small>{farmer.name} - {farmer.liveLocation || markets[0]?.address || 'Lahore'}</small></div>
+                        <div><strong>{farmer.owner}</strong><small>{farmer.name} - {farmer.liveLocation || markets[0]?.address || 'Local pickup'}</small></div>
                       </div>
                       <Link className="arrow-link" to={`/farmers/${farmer.id}`}>Visit the farm profile <ArrowRight /></Link>
                     </div>

@@ -16,7 +16,7 @@ const answer = (question) => {
     return `The next market is ${market.name} on ${market.day}, ${market.date}, from ${market.hours}.`
   }
   if (query.includes('pickup') || query.includes('pay')) return 'Reserve online, choose a pickup window, then collect from the farmer’s stall. Payment is made in person—there is no online payment.'
-  if (query.includes('tomato')) return 'Willow & Root Farm has heirloom tomatoes in stock for Liberty Harvest Market and the DHA evening market.'
+  if (query.includes('tomato')) return db.products.filter((item) => item.name.toLowerCase().includes('tomato') && item.available && item.stock > 0).slice(0, 2).map((item) => `${item.name} has ${item.stock} ${item.unit} available`).join('. ') || 'No tomatoes are available in live stock right now.'
   return 'I can help with produce availability, market schedules, farmer locations, and pickup. Try asking what is fresh today.'
 }
 

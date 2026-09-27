@@ -27,8 +27,6 @@ export const statusLabel = (status) => ({
 
 export const uid = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 
-// --- Availability & freshness helpers (smart availability system) ---
-
 export function getAvailability(product) {
   if (!product) return { key: 'sold-out', label: 'Sold Out', tone: 'out' }
   if (!product.available || product.stock <= 0) return { key: 'sold-out', label: 'Sold Out', tone: 'out' }
