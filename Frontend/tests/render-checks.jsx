@@ -1,4 +1,4 @@
-﻿import { renderToString } from 'react-dom/server'
+import { renderToString } from 'react-dom/server'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '../src/context/AuthContext'
 import { CartProvider } from '../src/context/CartContext'
@@ -25,7 +25,7 @@ import api from '../src/api'
 export function renderChecks(assert) {
   const db = api.snapshot()
   const cases = [
-    ['/', '/', Home, null, 'MarketLink'], ['/collections', '/collections', Collections, null, 'BY CATEGORY'],
+    ['/', '/', Home, null, 'MarketLink'], ['/collections', '/collections', Collections, null, 'FULL STOCK COLLECTIONS'],
     ['/products?category=Eggs', '/products', Products, null, 'Eggs'], ['/products/p-1', '/products/:id', Product, null, 'Compare prices'],
     ['/products/p-6', '/products/:id', Product, null, 'Notify me'], ['/compare/p-9', '/compare/:productId', Compare, null, 'Notify Me'],
     ['/markets', '/markets', Markets, null, 'Map View'], ['/markets/m-1', '/markets/:id', Market, null, 'Get directions'],

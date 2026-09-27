@@ -47,6 +47,16 @@ const farmerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  liveLocation: {
+    type: String,
+    default: ''
+  },
+  lat: {
+    type: Number
+  },
+  lng: {
+    type: Number
+  },
   status: {
     type: String,
     enum: ['approved', 'pending', 'suspended'],

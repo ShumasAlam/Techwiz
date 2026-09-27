@@ -8,6 +8,7 @@ import ProtectedRoute from './components/layout/ProtectedRoute'
 import AIChatbot from './components/shared/AIChatbot'
 import CompareDrawer from './components/shared/CompareDrawer'
 import Loader from './components/shared/Loader'
+import api from './api'
 import { AuthProvider } from './context/AuthContext'
 import { CartProvider } from './context/CartContext'
 import { CompareProvider } from './context/CompareContext'
@@ -48,8 +49,12 @@ function AppShell() {
   const portal = pathname === '/farmer/dashboard' || pathname === '/admin/dashboard'
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoaded(true), 1450)
+    const timer = setTimeout(() => setLoaded(true), 3000)
     return () => clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    void api.syncRemoteSnapshot?.().then(() => refresh((value) => value + 1))
   }, [])
 
   return <>

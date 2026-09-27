@@ -47,15 +47,13 @@ export default function ProductCard({ product, farmer }) {
     <article className="product-card">
       <Link to={`/products/${product.id}`} className="product-media">
         <img src={product.image} alt={product.name} loading="lazy" />
-        <span className="tag tag--light">{product.badge}</span>
-        {product.freshToday && <span className="tag tag--fresh">Fresh Today</span>}
         {soldOut && <span className="sold-mask">Sold Out</span>}
       </Link>
       <button className={`favorite-btn ${favorite ? 'is-active' : ''}`} type="button" onClick={() => onFavorite?.(product.id)} aria-label={`Save ${product.name}`}><Heart /></button>
       <div className="product-body">
         <div className="product-meta"><span>{farmer?.name}</span><StarRating value={product.rating} size={13} label={false} /></div>
         <div className="product-title-row"><Link to={`/products/${product.id}`}><h3>{product.name}</h3></Link><p className="price">{formatCurrency(product.price)}<small>/{product.unit}</small></p></div>
-        <div className={`availability-row availability-row--${availability.tone}`}><i />{availability.label}<span className="freshness-dot">· {freshness.freshLabel}</span></div>
+        <div className={`availability-row availability-row--${availability.tone}`}><i />{availability.label}<span className="freshness-dot">· {product.freshWindow ? 'Morning stock' : freshness.freshLabel}</span></div>
         <div className="product-actions">
           <span className={soldOut ? 'stock stock--out' : 'stock'}><i />{soldOut ? 'Sold Out' : `${product.stock} left`}</span>
           {soldOut

@@ -2,15 +2,16 @@ import { cloneSeedData } from './mockData'
 import { uid } from '../utils/helpers'
 
 const DB_KEY = 'marketlink_demo_db_v1'
-const API_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '')
+const API_URL = (import.meta.env.VITE_API_URL || 'https://techwiz-backend-gold.vercel.app/api').replace(/\/$/, '')
 
-const wait = (value, delay = 50) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
+const wait = (value, delay = 80) => new Promise((resolve) => setTimeout(() => resolve(value), delay))
 
 const readDB = () => {
   try {
     const stored = localStorage.getItem(DB_KEY)
     if (stored) {
       const db = JSON.parse(stored)
+      let upgraded = false
       if (!db.tripCatalogVersion) {
         const seed = cloneSeedData()
         for (const product of seed.products.filter((item) => Number(item.id.slice(2)) >= 30)) {
@@ -26,8 +27,37 @@ const readDB = () => {
         })
         db.notifications?.forEach((item) => { item.text = item.text.replaceAll('Organic Spinach', 'Fresh Spinach') })
         db.tripCatalogVersion = 1
-        localStorage.setItem(DB_KEY, JSON.stringify(db))
+        upgraded = true
       }
+      db.products?.forEach((product) => {
+        const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(product.category)
+        const stockedThisMorning = isFreshProduce && (product.harvestDaysAgo ?? 0) === 0 && (product.lastUpdatedMinutesAgo ?? 0) <= 360
+        const expiresInHours = stockedThisMorning ? Math.max(1, 24 - Math.ceil((product.lastUpdatedMinutesAgo ?? 0) / 60)) : 0
+        if (product.stockedThisMorning !== stockedThisMorning || product.expiresInHours !== expiresInHours || product.freshWindow !== (stockedThisMorning && expiresInHours <= 24)) {
+          product.stockedThisMorning = stockedThisMorning
+          product.expiresInHours = expiresInHours
+          product.freshWindow = stockedThisMorning && expiresInHours <= 24
+          upgraded = true
+        }
+      })
+      db.farmers?.forEach((farmer) => {
+        const user = db.users?.find((item) => item.id === farmer.userId)
+        if (farmer.featured === undefined) {
+          farmer.featured = ['f-1', 'f-2', 'f-3'].includes(farmer.id)
+          upgraded = true
+        }
+        if (!farmer.liveLocation && user?.address) {
+          farmer.liveLocation = user.address
+          upgraded = true
+        }
+      })
+      const admin = db.users?.find((item) => item.role === 'admin')
+      if (admin && (admin.email !== 'admin123@gmail.com' || admin.password !== 'admin123')) {
+        admin.email = 'admin123@gmail.com'
+        admin.password = 'admin123'
+        upgraded = true
+      }
+      if (upgraded) localStorage.setItem(DB_KEY, JSON.stringify(db))
       return db
     }
   } catch { /* self-heal below */ }
@@ -44,48 +74,12 @@ const writeDB = (data) => {
   return data
 }
 
-// Background sync from MongoDB Atlas via /snapshot
-let syncInProgress = false
-const syncWithBackend = async () => {
-  if (syncInProgress || typeof window === 'undefined' || !API_URL) return
-  syncInProgress = true
-  try {
-    const token = localStorage.getItem('marketlink_token')
-    const response = await fetch(`${API_URL}/snapshot`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    })
-    if (response.ok) {
-      const serverData = await response.json()
-      if (serverData && serverData.products && serverData.markets) {
-        const current = readDB()
-        const merged = {
-          ...current,
-          ...serverData,
-          tripCatalogVersion: 1
-        }
-        writeDB(merged)
-      }
-    }
-  } catch {
-    // Offline or server not yet started: keep using local cache
-  } finally {
-    syncInProgress = false
-  }
-}
-
-// Initial sync on app load
-if (typeof window !== 'undefined' && API_URL) {
-  setTimeout(syncWithBackend, 200)
-}
-
 const remote = async (path, options = {}) => {
   if (!API_URL) throw new Error('Local demo mode')
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('marketlink_token') : null
+  const isFormData = options.body instanceof FormData
   const headers = {
-    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers
   }
@@ -94,12 +88,12 @@ const remote = async (path, options = {}) => {
     headers
   })
   if (!response.ok) {
-    let errorMsg = `Request failed: ${response.status}`
+    let message = `Request failed: ${response.status}`
     try {
-      const data = await response.json()
-      if (data.message) errorMsg = data.message
-    } catch { /* ignore */ }
-    const error = new Error(errorMsg)
+      const body = await response.json()
+      message = body.message || body.error || message
+    } catch { /* use default */ }
+    const error = new Error(message)
     error.status = response.status
     throw error
   }
@@ -113,16 +107,43 @@ const remote = async (path, options = {}) => {
 const localFirst = async (path, options, fallback) => {
   if (!API_URL) return wait(fallback ? fallback() : null)
   try {
-    const result = await remote(path, options)
-    setTimeout(syncWithBackend, 100)
-    return result
+    return await remote(path, options)
   } catch (error) {
     if (error.status && error.status >= 400 && error.status < 500) {
       throw error
     }
-    const localResult = fallback ? fallback() : null
-    return wait(localResult)
+    console.warn(`MarketLink API unavailable for ${path}; using local demo fallback.`, error.message)
+    return wait(fallback ? fallback() : null)
   }
+}
+
+const hydrateDerivedFields = (db) => {
+  db.products?.forEach((product) => {
+    const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(product.category)
+    const stockedThisMorning = isFreshProduce && (product.harvestDaysAgo ?? 0) === 0 && (product.lastUpdatedMinutesAgo ?? 0) <= 360
+    product.stockedThisMorning = stockedThisMorning
+    product.expiresInHours = stockedThisMorning ? Math.max(1, 24 - Math.ceil((product.lastUpdatedMinutesAgo ?? 0) / 60)) : 0
+    product.freshWindow = stockedThisMorning && product.expiresInHours <= 24
+  })
+  db.farmers?.forEach((farmer) => {
+    farmer.featured ??= ['f-1', 'f-2', 'f-3'].includes(farmer.id)
+  })
+  db.stockSubscriptions ||= []
+  db.notifications ||= []
+  db.reviews ||= []
+  db.orders ||= []
+  db.users ||= []
+  db.markets ||= []
+  db.farmers ||= []
+  db.products ||= []
+  return db
+}
+
+const syncRemoteSnapshot = async () => {
+  if (!API_URL) return readDB()
+  const snapshot = await remote('/snapshot')
+  writeDB(hydrateDerivedFields(snapshot))
+  return snapshot
 }
 
 const addNotification = (db, userId, type, text, details = {}) => {
@@ -183,8 +204,11 @@ const reserveOrders = (db, payload) => {
 }
 
 export const api = {
-  mode: API_URL ? 'connected' : 'demo',
-  sync: syncWithBackend,
+  mode: API_URL ? 'hybrid' : 'demo',
+  syncRemoteSnapshot: () => syncRemoteSnapshot().catch((error) => {
+    console.warn('MarketLink live API snapshot unavailable; continuing with local data.', error.message)
+    return readDB()
+  }),
   resetDemo: () => { const fresh = cloneSeedData(); writeDB(fresh); return wait(fresh) },
 
   // ==========================================
@@ -209,7 +233,15 @@ export const api = {
       if (db.users.some((item) => item.email.toLowerCase() === payload.email.toLowerCase())) throw new Error('An account with this email already exists.')
       const user = { id: uid('u'), ...payload, favorites: [], compareList: [], cart: [], farmerId: payload.role === 'farmer' ? uid('f') : undefined }
       db.users.push(user)
-      if (payload.role === 'farmer') db.farmers.push({ id: user.farmerId, userId: user.id, name: payload.businessName, owner: payload.name, initials: payload.name.slice(0, 2).toUpperCase(), marketIds: [], rating: 0, reviews: 0, years: 0, status: 'pending', bio: 'New to MarketLink.', specialties: [], pickup: [], featured: false })
+      if (payload.role === 'farmer') {
+        db.farmers.push({
+          id: user.farmerId, userId: user.id, name: payload.businessName, owner: payload.name,
+          initials: payload.name.slice(0, 2).toUpperCase(), marketIds: [], rating: 0, reviews: 0,
+          years: 0, status: 'pending', featured: false, bio: 'New to MarketLink.', specialties: [],
+          pickup: [], liveLocation: payload.liveLocation || payload.address,
+          lat: Number(payload.lat) || undefined, lng: Number(payload.lng) || undefined
+        })
+      }
       writeDB(db)
       return { token: `demo-${user.id}`, user: { ...user, password: undefined } }
     }),
@@ -245,7 +277,6 @@ export const api = {
       const user = readDB().users.find((item) => item.id === userId)
       return user?.favorites || []
     }),
-    // Item 4: Compare List API
     getCompare: (userId) => localFirst(`/users/${userId}/compare`, { method: 'GET' }, () => {
       const user = readDB().users.find((item) => item.id === userId)
       return { productIds: user?.compareList || [] }
@@ -269,7 +300,6 @@ export const api = {
       }
       return { compareList: [] }
     }),
-    // Item 8: Preferences API
     getPreferences: (userId) => localFirst(`/users/${userId}/preferences`, { method: 'GET' }, () => {
       const user = readDB().users.find((item) => item.id === userId)
       return user?.preferences || { theme: 'light', notificationsEnabled: true }
@@ -283,15 +313,6 @@ export const api = {
       }
       return { preferences: user?.preferences }
     }),
-    getNotifications: (userId) => localFirst(`/users/${userId}/notifications`, { method: 'GET' }, () => {
-      return readDB().notifications.filter((item) => item.userId === userId)
-    }),
-    markAllRead: (userId) => localFirst(`/users/${userId}/notifications/read-all`, { method: 'PATCH' }, () => {
-      const db = readDB()
-      db.notifications.forEach((item) => { if (item.userId === userId) item.unread = false })
-      writeDB(db)
-      return true
-    }),
   },
 
   // ==========================================
@@ -304,7 +325,11 @@ export const api = {
       const db = readDB()
       const farmer = db.farmers.find((item) => item.id === payload.farmerId)
       if (farmer?.status !== 'approved') throw new Error('Your farmer profile must be approved before publishing products.')
-      const item = { id: uid('p'), rating: 0, reviews: 0, available: true, ...payload }
+      const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(payload.category)
+      const lastUpdatedMinutesAgo = 0
+      const stockedThisMorning = isFreshProduce
+      const expiresInHours = stockedThisMorning ? 24 : 0
+      const item = { id: uid('p'), rating: 0, reviews: 0, harvestDaysAgo: 0, lastUpdatedMinutesAgo, recentlyRestocked: true, stockedThisMorning, expiresInHours, freshToday: isFreshProduce, freshWindow: stockedThisMorning, available: true, ...payload }
       db.products.unshift(item)
       writeDB(db)
       return item
@@ -343,7 +368,70 @@ export const api = {
   },
 
   // ==========================================
-  // 5. ORDERS
+  // 5. MARKETS
+  // ==========================================
+  markets: {
+    list: () => localFirst('/markets', {}, () => readDB().markets),
+    get: (id) => localFirst(`/markets/${id}`, {}, () => readDB().markets.find((item) => item.id === id)),
+    getNearby: (lat, lng, radiusKm = 50) => localFirst(`/markets/nearby?lat=${lat}&lng=${lng}&radiusKm=${radiusKm}`, {}, () => readDB().markets),
+    planRoute: (lat, lng, marketId) => localFirst('/markets/route-plan', { method: 'POST', body: JSON.stringify({ lat, lng, marketId }) }, () => {
+      const market = readDB().markets.find(m => m.id === marketId)
+      return { market, directions: { googleMapsUrl: `https://www.google.com/maps?q=${encodeURIComponent(market?.address || '')}` } }
+    }),
+    save: (payload) => localFirst(payload.id ? `/markets/${payload.id}` : '/markets', { method: payload.id ? 'PUT' : 'POST', body: JSON.stringify(payload) }, () => {
+      const db = readDB()
+      if (!payload.name?.trim() || !payload.address?.trim() || !payload.day?.trim() || !payload.openingTime || !payload.closingTime || payload.openingTime >= payload.closingTime || !Number.isFinite(payload.lat) || Math.abs(payload.lat) > 90 || !Number.isFinite(payload.lng) || Math.abs(payload.lng) > 180) throw new Error('Enter market details, valid coordinates, and a closing time after opening.')
+      const existing = db.markets.find((item) => item.id === payload.id)
+      const item = { ...existing, ...payload, id: existing?.id || uid('m'), hours: payload.openingTime + ' - ' + payload.closingTime, date: existing?.date || 'Weekly', stalls: existing?.stalls || 0, description: existing?.description || 'Local market pickup point.' }
+      if (existing) Object.assign(existing, item); else db.markets.push(item)
+      writeDB(db)
+      return item
+    }),
+    remove: (id) => localFirst(`/markets/${id}`, { method: 'DELETE' }, () => {
+      const db = readDB()
+      if (db.orders.some((order) => order.marketId === id && !['completed', 'cancelled', 'declined'].includes(order.status))) throw new Error('Complete or cancel active pickups before deleting this market.')
+      db.markets = db.markets.filter((item) => item.id !== id)
+      db.products.forEach((item) => { item.marketIds = item.marketIds.filter((marketId) => marketId !== id) })
+      db.farmers.forEach((item) => { item.marketIds = item.marketIds.filter((marketId) => marketId !== id) })
+      writeDB(db)
+      return true
+    }),
+  },
+
+  // ==========================================
+  // 6. FARMERS
+  // ==========================================
+  farmers: {
+    list: (featuredOnly = false) => localFirst(featuredOnly ? '/farmers?featured=true' : '/farmers', {}, () => {
+      const farmers = readDB().farmers
+      return featuredOnly ? farmers.filter(f => f.featured) : farmers
+    }),
+    get: (id) => localFirst(`/farmers/${id}`, {}, () => readDB().farmers.find((item) => item.id === id)),
+    getProfile: (id) => localFirst(`/farmers/profile/${id}`, {}, () => readDB().farmers.find((item) => item.id === id)),
+    updateProfile: (id, payload) => localFirst(`/farmers/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, () => {
+      const db = readDB()
+      const farmer = db.farmers.find((item) => item.id === id)
+      if (farmer) Object.assign(farmer, payload)
+      writeDB(db)
+      return farmer
+    }),
+    toggleFeatured: (id, featured) => localFirst(`/farmers/${id}/featured`, { method: 'PATCH', body: JSON.stringify({ featured }) }, () => {
+      const db = readDB()
+      const farmer = db.farmers.find((item) => item.id === id)
+      if (farmer) farmer.featured = featured !== undefined ? featured : !farmer.featured
+      writeDB(db)
+      return farmer
+    }),
+    getOrders: () => localFirst('/farmers/orders', { method: 'GET' }, () => {
+      const db = readDB()
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('marketlink_session') : null
+      const user = token ? JSON.parse(token)?.user : null
+      return db.orders.filter((o) => o.farmerId === user?.farmerId || o.farmerId === user?.id)
+    }),
+  },
+
+  // ==========================================
+  // 7. ORDERS
   // ==========================================
   orders: {
     list: () => localFirst('/orders', {}, () => readDB().orders),
@@ -358,7 +446,7 @@ export const api = {
       if (!transitions[order.status]?.includes(status)) throw new Error('This order can no longer be changed to that status.')
       if (['declined', 'cancelled'].includes(status)) restoreStock(db, order)
       order.status = status
-      if (['accepted', 'ready'].includes(status)) addNotification(db, order.customerId, status, 'Order ' + order.id + (status === 'accepted' ? ' was accepted by your farmer.' : ' is ready for pickup.'), { orderId: order.id })
+      if (['accepted', 'ready'].includes(status)) addNotification(db, order.customerId, status, 'Order ' + order.id + (status === 'accepted' ? ' was accepted by your farmer for ' : ' is ready for pickup at ') + order.pickupDate + ', ' + order.pickupSlot + '.', { orderId: order.id })
       writeDB(db)
       return order
     }),
@@ -374,58 +462,7 @@ export const api = {
   },
 
   // ==========================================
-  // 6. MARKETS & ITEM 7 (GEO-SEARCH / ROUTE PLAN)
-  // ==========================================
-  markets: {
-    list: () => localFirst('/markets', {}, () => readDB().markets),
-    get: (id) => localFirst(`/markets/${id}`, {}, () => readDB().markets.find((item) => item.id === id)),
-    getNearby: (lat, lng, radiusKm = 50) => localFirst(`/markets/nearby?lat=${lat}&lng=${lng}&radiusKm=${radiusKm}`, {}, () => readDB().markets),
-    // Item 7: Route Plan API
-    planRoute: (lat, lng, marketId) => localFirst('/markets/route-plan', { method: 'POST', body: JSON.stringify({ lat, lng, marketId }) }, () => {
-      const market = readDB().markets.find(m => m.id === marketId)
-      return { market, directions: { googleMapsUrl: `https://www.google.com/maps?q=${encodeURIComponent(market?.address || '')}` } }
-    }),
-    create: (payload) => localFirst('/markets', { method: 'POST', body: JSON.stringify(payload) }, () => {
-      const db = readDB()
-      const item = { id: uid('m'), ...payload }
-      db.markets.push(item)
-      writeDB(db)
-      return item
-    }),
-    update: (id, payload) => localFirst(`/markets/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, () => {
-      const db = readDB()
-      const existing = db.markets.find((item) => item.id === id)
-      if (existing) Object.assign(existing, payload)
-      writeDB(db)
-      return existing
-    }),
-    save: (payload) => {
-      const db = readDB()
-      if (!payload.name?.trim() || !payload.address?.trim() || !payload.day?.trim() || !payload.openingTime || !payload.closingTime || payload.openingTime >= payload.closingTime || !Number.isFinite(payload.lat) || Math.abs(payload.lat) > 90 || !Number.isFinite(payload.lng) || Math.abs(payload.lng) > 180) throw new Error('Enter market details, valid coordinates, and a closing time after opening.')
-      const existing = db.markets.find((item) => item.id === payload.id)
-      const item = { ...existing, ...payload, id: existing?.id || uid('m'), hours: payload.openingTime + ' - ' + payload.closingTime, date: existing?.date || 'Weekly', stalls: existing?.stalls || 0, description: existing?.description || 'Local market pickup point.' }
-      if (existing) Object.assign(existing, item); else db.markets.push(item)
-      writeDB(db)
-      if (API_URL) {
-        remote(payload.id ? `/markets/${payload.id}` : '/markets', { method: payload.id ? 'PUT' : 'POST', body: JSON.stringify(payload) }).catch(() => {})
-      }
-      return item
-    },
-    remove: (id) => {
-      const db = readDB()
-      if (db.orders.some((order) => order.marketId === id && !['completed', 'cancelled', 'declined'].includes(order.status))) throw new Error('Complete or cancel active pickups before deleting this market.')
-      db.markets = db.markets.filter((item) => item.id !== id)
-      db.products.forEach((item) => { item.marketIds = item.marketIds.filter((marketId) => marketId !== id) })
-      db.farmers.forEach((item) => { item.marketIds = item.marketIds.filter((marketId) => marketId !== id) })
-      writeDB(db)
-      if (API_URL) {
-        remote(`/markets/${id}`, { method: 'DELETE' }).catch(() => {})
-      }
-    },
-  },
-
-  // ==========================================
-  // 7. REVIEWS
+  // 8. REVIEWS
   // ==========================================
   reviews: {
     list: () => localFirst('/reviews', {}, () => readDB().reviews),
@@ -448,57 +485,19 @@ export const api = {
       writeDB(db)
       return review
     }),
-    respond: (id, farmerId, response) => {
+    respond: (id, farmerId, response) => localFirst(`/reviews/${id}/respond`, { method: 'PATCH', body: JSON.stringify({ farmerId, response }) }, () => {
       const db = readDB()
       const review = db.reviews.find((item) => item.id === id)
       if (!review || !db.products.some((item) => item.id === review.productId && item.farmerId === farmerId) || !response.trim()) throw new Error('Enter a reply to a review on your product.')
       review.response = response.trim()
       writeDB(db)
-      if (API_URL) {
-        remote(`/reviews/${id}/respond`, { method: 'PUT', body: JSON.stringify({ response, farmerId }) }).catch(() => {})
-      }
       return review
-    },
-    remove: (id) => {
+    }),
+    remove: (id) => localFirst(`/reviews/${id}`, { method: 'DELETE' }, () => {
       const db = readDB()
       db.reviews = db.reviews.filter((item) => item.id !== id)
       writeDB(db)
-      if (API_URL) {
-        remote(`/reviews/${id}`, { method: 'DELETE' }).catch(() => {})
-      }
-    },
-  },
-
-  // ==========================================
-  // 8. FARMERS & ITEM 1 (FEATURED FARMER)
-  // ==========================================
-  farmers: {
-    list: (featuredOnly = false) => localFirst(featuredOnly ? '/farmers?featured=true' : '/farmers', {}, () => {
-      const farmers = readDB().farmers
-      return featuredOnly ? farmers.filter(f => f.featured) : farmers
-    }),
-    get: (id) => localFirst(`/farmers/${id}`, {}, () => readDB().farmers.find((item) => item.id === id)),
-    getProfile: (id) => localFirst(`/farmers/profile/${id}`, {}, () => readDB().farmers.find((item) => item.id === id)),
-    updateProfile: (id, payload) => localFirst(`/farmers/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, () => {
-      const db = readDB()
-      const farmer = db.farmers.find((item) => item.id === id)
-      if (farmer) Object.assign(farmer, payload)
-      writeDB(db)
-      return farmer
-    }),
-    // Item 1: Toggle Featured Farmer
-    toggleFeatured: (id, featured) => localFirst(`/farmers/${id}/featured`, { method: 'PATCH', body: JSON.stringify({ featured }) }, () => {
-      const db = readDB()
-      const farmer = db.farmers.find((item) => item.id === id)
-      if (farmer) farmer.featured = featured !== undefined ? featured : !farmer.featured
-      writeDB(db)
-      return farmer
-    }),
-    getOrders: () => localFirst('/farmers/orders', { method: 'GET' }, () => {
-      const db = readDB()
-      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('marketlink_session') : null
-      const user = token ? JSON.parse(token)?.user : null
-      return db.orders.filter((o) => o.farmerId === user?.farmerId || o.farmerId === user?.id)
+      return true
     }),
   },
 
@@ -543,10 +542,18 @@ export const api = {
       writeDB(db)
       return user
     }),
+    updateFarmerProfile: (id, payload) => localFirst(`/farmers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }, () => {
+      const db = readDB()
+      const farmer = db.farmers.find((item) => item.id === id)
+      if (!farmer) throw new Error('Farmer profile not found.')
+      Object.assign(farmer, payload)
+      writeDB(db)
+      return farmer
+    }),
   },
 
   // ==========================================
-  // 10. ITEM 2: CATEGORIES API
+  // 10. CATEGORIES
   // ==========================================
   categories: {
     list: () => localFirst('/categories', { method: 'GET' }, () => {
@@ -562,7 +569,7 @@ export const api = {
   },
 
   // ==========================================
-  // 11. ITEM 3: REPORTS & CSV EXPORT API
+  // 11. REPORTS & CSV EXPORT
   // ==========================================
   reports: {
     list: () => localFirst('/reports', { method: 'GET' }, () => []),
@@ -576,7 +583,7 @@ export const api = {
   },
 
   // ==========================================
-  // 12. ITEM 5: SERVER-SIDE CART PERSISTENCE
+  // 12. SERVER-SIDE CART PERSISTENCE
   // ==========================================
   cart: {
     get: (userId) => localFirst(`/cart/${userId}`, { method: 'GET' }, () => {
@@ -604,7 +611,7 @@ export const api = {
   },
 
   // ==========================================
-  // 13. ITEM 6: AI CHATBOT BACKEND ENDPOINT
+  // 13. AI CHATBOT
   // ==========================================
   ai: {
     chat: (message, history = []) => localFirst('/ai/chat', { method: 'POST', body: JSON.stringify({ message, history }) }, () => ({
@@ -622,7 +629,7 @@ export const api = {
   // 14. NOTIFICATIONS
   // ==========================================
   notifications: {
-    list: (userId) => localFirst(userId ? `/notifications?userId=${userId}` : '/notifications', {}, () => {
+    list: (userId) => localFirst(userId ? `/users/${userId}/notifications` : '/notifications', {}, () => {
       const db = readDB()
       return userId ? db.notifications.filter((item) => item.userId === userId) : db.notifications
     }),
@@ -639,6 +646,13 @@ export const api = {
       writeDB(db)
       return true
     }),
+    push: (userId, type, text, details = {}) => localFirst('/notifications', { method: 'POST', body: JSON.stringify({ userId, type, text, ...details }) }, () => {
+      const db = readDB()
+      const notification = { id: uid('n'), userId, type, text, unread: true, createdAt: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }), ...details }
+      db.notifications.unshift(notification)
+      writeDB(db)
+      return notification
+    }),
     create: (payload) => localFirst('/notifications', { method: 'POST', body: JSON.stringify(payload) }, () => {
       const db = readDB()
       const notification = { id: uid('n'), unread: true, createdAt: new Date().toLocaleString('en-GB'), ...payload }
@@ -646,45 +660,30 @@ export const api = {
       writeDB(db)
       return notification
     }),
-    push: (userId, type, text, details = {}) => {
-      const db = readDB()
-      const notification = { id: uid('n'), userId, type, text, unread: true, createdAt: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }), ...details }
-      db.notifications.unshift(notification)
-      writeDB(db)
-      if (API_URL) {
-        remote('/notifications', { method: 'POST', body: JSON.stringify({ userId, type, text, ...details }) }).catch(() => {})
-      }
-      return notification
-    },
   },
 
   // ==========================================
   // 15. SUBSCRIPTIONS & ANNOUNCEMENTS
   // ==========================================
   subscriptions: {
-    notifyMe: (userId, productId) => {
+    notifyMe: (userId, productId) => localFirst('/subscriptions', { method: 'POST', body: JSON.stringify({ userId, productId }) }, () => {
       const db = readDB()
       db.stockSubscriptions ||= []
       if (!db.stockSubscriptions.some((item) => item.userId === userId && item.productId === productId)) {
         db.stockSubscriptions.push({ userId, productId })
       }
       writeDB(db)
-      if (API_URL) {
-        remote('/subscriptions', { method: 'POST', body: JSON.stringify({ userId, productId }) }).catch(() => {})
-      }
       return true
-    },
+    }),
     list: () => localFirst('/subscriptions', { method: 'GET' }, () => readDB().stockSubscriptions || []),
   },
   announcements: {
-    publish: (text) => {
+    publish: (text) => localFirst('/announcements', { method: 'POST', body: JSON.stringify({ text }) }, () => {
       const db = readDB()
       db.users.filter((user) => user.role === 'customer').forEach((user) => addNotification(db, user.id, 'announcement', text))
       writeDB(db)
-      if (API_URL) {
-        remote('/announcements', { method: 'POST', body: JSON.stringify({ text }) }).catch(() => {})
-      }
-    },
+      return { success: true }
+    }),
   },
 
   // ==========================================

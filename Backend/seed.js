@@ -39,6 +39,7 @@ const seedDatabase = async () => {
     const hashedCustomerPassword = await bcrypt.hash('demo123', 10);
     const hashedFarmerPassword = await bcrypt.hash('demo123', 10);
     const hashedAdminPassword = await bcrypt.hash('demo123', 10);
+    const hashedAdmin123Password = await bcrypt.hash('admin123', 10);
 
     const users = [
       {
@@ -93,6 +94,24 @@ const seedDatabase = async () => {
         profile: {
           name: 'MarketLink Admin',
           contactNumber: '+92 42 111000111',
+          address: { street: 'Lahore', city: 'Lahore', state: 'Punjab', zipCode: '54000', country: 'Pakistan' }
+        }
+      },
+      {
+        id: 'u-admin-alt',
+        username: 'admin123',
+        name: 'MarketLink Admin',
+        email: 'admin123@gmail.com',
+        password: hashedAdmin123Password,
+        role: 'admin',
+        phone: '+92 42 111000112',
+        address: 'Lahore',
+        favorites: [],
+        status: 'active',
+        isActive: true,
+        profile: {
+          name: 'MarketLink Admin',
+          contactNumber: '+92 42 111000112',
           address: { street: 'Lahore', city: 'Lahore', state: 'Punjab', zipCode: '54000', country: 'Pakistan' }
         }
       }

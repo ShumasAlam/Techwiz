@@ -2,6 +2,8 @@
 node_modules/
 Frontend/node_modules/
 Backend/node_modules/
+Frontend2/
+*.rar
 
 # Production build
 dist/

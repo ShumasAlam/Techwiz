@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, MapPin, ShieldCheck } from 'lucide-react'
+﻿import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, MapPin, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -9,9 +9,9 @@ import { useCart } from '../../context/CartContext'
 import { formatCurrency } from '../../utils/helpers'
 
 const pickupSlots = {
-  'm-1': ['9:00–9:30 AM', '10:00–10:30 AM', '11:00–11:30 AM', '12:00–12:30 PM'],
-  'm-2': ['10:00–10:30 AM', '11:00–11:30 AM', '12:00–12:30 PM', '1:00–1:30 PM'],
-  'm-3': ['4:30–5:00 PM', '5:30–6:00 PM', '6:30–7:00 PM', '7:00–7:30 PM'],
+  'm-1': ['9:00â€“9:30 AM', '10:00â€“10:30 AM', '11:00â€“11:30 AM', '12:00â€“12:30 PM'],
+  'm-2': ['10:00â€“10:30 AM', '11:00â€“11:30 AM', '12:00â€“12:30 PM', '1:00â€“1:30 PM'],
+  'm-3': ['4:30â€“5:00 PM', '5:30â€“6:00 PM', '6:30â€“7:00 PM', '7:00â€“7:30 PM'],
 }
 
 export default function PickupCheckoutPage() {
@@ -87,7 +87,7 @@ export default function PickupCheckoutPage() {
                   {markets.map((option) => (
                     <button key={option.id} type='button' onClick={() => { setMarketId(option.id); setSlot(null); setDate('') }} className={market.id === option.id ? 'is-active' : ''}>
                       <span><MapPin /></span>
-                      <div><h3>{option.name}</h3><p>{option.day} · {option.hours}</p><small>{option.address}</small></div>
+                      <div><h3>{option.name}</h3><p>{option.day} Â· {option.hours}</p><small>{option.address}</small></div>
                       {market.id === option.id && <Check />}
                     </button>
                   ))}
@@ -134,20 +134,20 @@ export default function PickupCheckoutPage() {
             <p className='eyebrow'>RESERVATION SUMMARY</p>
             {items.map((item) => (
               <div className='checkout-item' key={item.id}>
-                <span>{item.quantity}×</span>
+                <span>{item.quantity}Ã—</span>
                 <div><b>{item.name}</b><small>{item.unit}</small></div>
                 <strong>{formatCurrency(item.price * item.quantity)}</strong>
               </div>
             ))}
             {market && <div className='pickup-summary'>
               <CalendarDays />
-              <div><small>PICKUP</small><b>{market.name}</b><span>{selectedDate} · {selectedSlot}</span></div>
+              <div><small>SUITABLE PICKUP TIME</small><b>{market.name}</b><span>{selectedDate} · {selectedSlot}</span></div>
             </div>}
             {farmerCount > 1 && <p className='checkout-group-note'>{farmerCount} farmers will prepare separate pickup slips for this basket.</p>}
             <div className='summary-total'><span>Pay at pickup</span><strong>{formatCurrency(total)}</strong></div>
             {invalidItems && <p role="alert">Stock or prices have changed. <Link to="/cart">Review your basket</Link> before reserving.</p>}{error && <p className='form-error'>{error}</p>}
             <button className='btn btn--large' type='button' onClick={placeOrder} disabled={!market || !selectedDate || invalidItems || placing}>
-              {placing ? 'Reserving your basket…' : 'Place reservation'} <ArrowRight />
+              {placing ? 'Reserving your basketâ€¦' : 'Place reservation'} <ArrowRight />
             </button>
             <p><ShieldCheck /> Stock is reserved when you place the order. Pay each farmer in person.</p>
           </aside>
@@ -156,3 +156,5 @@ export default function PickupCheckoutPage() {
     </main>
   )
 }
+
+

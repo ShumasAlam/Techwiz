@@ -128,6 +128,18 @@ const productSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  stockedThisMorning: {
+    type: Boolean,
+    default: false
+  },
+  expiresInHours: {
+    type: Number,
+    default: 0
+  },
+  freshWindow: {
+    type: Boolean,
+    default: false
+  },
   isOrganic: {
     type: Boolean,
     default: false
@@ -156,6 +168,14 @@ productSchema.pre('save', function(next) {
   this.isAvailable = this.available;
   this.averageRating = this.rating;
   this.totalReviews = this.reviews;
+
+  const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(this.category);
+  const stockedThisMorning = isFreshProduce && (this.harvestDaysAgo ?? 0) === 0 && (this.lastUpdatedMinutesAgo ?? 0) <= 360;
+  const expiresInHours = stockedThisMorning ? Math.max(1, 24 - Math.ceil((this.lastUpdatedMinutesAgo ?? 0) / 60)) : 0;
+  this.stockedThisMorning = stockedThisMorning;
+  this.expiresInHours = expiresInHours;
+  this.freshWindow = stockedThisMorning && expiresInHours <= 24;
+
   this.updatedAt = Date.now();
   next();
 });

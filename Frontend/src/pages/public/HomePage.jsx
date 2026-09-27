@@ -1,16 +1,15 @@
-import { ArrowRight, CalendarCheck, Check, Clock3, LocateFixed, MapPin, Search, ShoppingBasket, Store, Truck, UserRound } from 'lucide-react'
+import { ArrowRight, CalendarCheck, Check, Clock3, LocateFixed, MapPin, Search, ShoppingBasket, Star, Store, Truck, UserRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import { toast } from 'sonner'
 import useLocalStorage from '../../hooks/useLocalStorage'
 import marketCrate from '../../assets/market-crate.jpg'
-import AsciiWave from '../../components/lightswind/ascii-wave'
-import CoolSlideGallery from '../../components/lightswind/cool-slide-gallery'
+import heroBackground from '../../assets/marketlink-hero-bg-hd (1).png'
+import FeatureCarousel from '../../components/ui/FeatureCarousel'
 import ProductCard from '../../components/shared/ProductCard'
 import Reveal from '../../components/shared/Reveal'
 import { useAuth } from '../../context/AuthContext'
-import { formatCurrency, getInitials } from '../../utils/helpers'
 
 const areaKeywords = {
   dha: ['dha', 'phase 5', 'defence'],
@@ -36,70 +35,21 @@ function sortMarketsForLocation(markets, userLocation, liveLocation) {
   })
 }
 
-function heroSlidesFromData(db) {
-  const sales = db.orders.reduce((totals, order) => {
-    order.items.forEach((item) => {
-      totals[item.productId] = (totals[item.productId] || 0) + item.quantity
-    })
-    return totals
-  }, {})
-  const liveProducts = db.products.filter((product) => product.available && product.stock > 0)
-  const farmerFor = (product) => db.farmers.find((farmer) => farmer.id === product.farmerId)
-  const newStock = [...liveProducts]
-    .sort((first, second) => ((farmerFor(second)?.rating || 0) + (sales[second.id] || 0)) - ((farmerFor(first)?.rating || 0) + (sales[first.id] || 0)) || second.stock - first.stock)
-    .slice(0, 3)
-  const trending = [...liveProducts]
-    .sort((first, second) => (sales[second.id] || 0) - (sales[first.id] || 0) || second.reviews - first.reviews)
-    .slice(0, 3)
-  const topFarmers = [...db.farmers]
-    .filter((farmer) => farmer.status === 'approved')
-    .sort((first, second) => (second.featured ? 1 : 0) - (first.featured ? 1 : 0) || second.rating - first.rating || second.reviews - first.reviews)
-    .slice(0, 3)
-
-  return [
-    {
-      badge: 'New Stock',
-      title: 'Fresh drops',
-      subtitle: 'Top-rated vendors just added',
-      items: newStock.map((product) => {
-        const farmer = farmerFor(product)
-        return {
-          icon: getInitials(product.name),
-          name: product.name,
-          detail: farmer?.name || 'Local vendor',
-          value: formatCurrency(product.price),
-          meta: `${product.stock} ${product.unit}s`,
-          href: `/products/${product.id}`,
-        }
-      }),
-    },
-    {
-      badge: 'Trending',
-      title: 'Most reserved',
-      subtitle: 'Highest sales this week',
-      items: trending.map((product) => ({
-        icon: getInitials(product.name),
-        name: product.name,
-        detail: `${sales[product.id] || product.reviews} sales signals`,
-        value: formatCurrency(product.price),
-        meta: `${product.stock} left`,
+function featureCardsFromData(db) {
+  return db.products
+    .filter((product) => product.available && product.stock > 0)
+    .sort((first, second) => Number(second.freshWindow) - Number(first.freshWindow) || second.rating - first.rating)
+    .slice(0, 5)
+    .map((product) => {
+      const farmer = db.farmers.find((item) => item.id === product.farmerId)
+      return {
+        id: product.id,
+        title: product.name,
+        image: product.image,
         href: `/products/${product.id}`,
-      })),
-    },
-    {
-      badge: 'Top Farmers',
-      title: 'Best profiles',
-      subtitle: 'Most loved growers',
-      items: topFarmers.map((farmer) => ({
-        icon: farmer.initials || getInitials(farmer.name),
-        name: farmer.name,
-        detail: farmer.specialties.join(' / '),
-        value: `${farmer.rating}`,
-        meta: `${farmer.reviews} reviews`,
-        href: `/farmers/${farmer.id}`,
-      })),
-    },
-  ]
+        description: `${farmer?.name || 'Local farmer'} has ${product.stock} ${product.unit}${product.stock === 1 ? '' : 's'} ready. ${product.freshWindow ? `Best within ${product.expiresInHours}h.` : product.badge}`,
+      }
+    })
 }
 
 export default function HomePage() {
@@ -109,31 +59,31 @@ export default function HomePage() {
   const [category, setCategory] = useState('All harvest')
   const [favorites, setFavorites] = useState([])
   const [location, setLocation] = useState(user?.address || '')
+  const [produceQuery, setProduceQuery] = useState('')
   const [liveLocation, setLiveLocation] = useState(null)
   const navigate = useNavigate()
   const categories = ['All harvest', 'Vegetables', 'Fruit', 'Dairy', 'Bakery']
-  const products = useMemo(() => category === 'All harvest' ? db.products.slice(0, 4) : db.products.filter((item) => item.category === category).slice(0, 4), [category, db.products])
+  const products = useMemo(() => {
+    const freshWindow = db.products.filter((item) => item.available && item.freshWindow)
+    return category === 'All harvest' ? freshWindow.slice(0, 4) : freshWindow.filter((item) => item.category === category).slice(0, 4)
+  }, [category, db.products])
   const seasonalProducts = useMemo(() => [...db.products].filter((item) => item.seasonal && item.available).sort((a, b) => a.id.localeCompare(b.id)).slice(0, 4), [db.products])
-  const heroSlides = useMemo(() => heroSlidesFromData(db), [db])
+  const featureSlides = useMemo(() => featureCardsFromData(db), [db])
+  const featuredFarmers = useMemo(() => {
+    const approved = db.farmers.filter((farmer) => farmer.status === 'approved')
+    return [...approved]
+      .sort((first, second) => Number(second.featured) - Number(first.featured) || second.rating - first.rating || second.reviews - first.reviews)
+      .slice(0, 3)
+  }, [db.farmers])
   const nearbyMarkets = useMemo(() => sortMarketsForLocation(db.markets, location || user?.address, liveLocation), [db.markets, location, liveLocation, user?.address])
   const mapTarget = liveLocation ? `${liveLocation.lat},${liveLocation.lng}` : `${nearbyMarkets[0]?.address || 'DHA Lahore'} farmers market`
   const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(mapTarget)}&z=13&output=embed`
   const toggleFavorite = (id) => setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
-
-  // Feature 1: Featured grower spotlight
-  const featuredFarmer = useMemo(() => {
-    return db.farmers.find(f => f.featured && f.status === 'approved') || db.farmers.find(f => f.status === 'approved') || db.farmers[0]
-  }, [db.farmers])
-
-  // Feature 7: Route planning / Geo Location
   const useLiveLocation = () => {
     if (!navigator.geolocation) { toast.error('Location is not supported. Enter your area instead.'); return }
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       setLiveLocation({ lat: coords.latitude, lng: coords.longitude })
       setLocation('Live location')
-      if (nearbyMarkets[0]?.id) {
-        api.markets.planRoute(coords.latitude, coords.longitude, nearbyMarkets[0].id).catch(() => {})
-      }
     }, () => toast.error('Could not get your location. Enter your area instead.'))
   }
 
@@ -142,7 +92,7 @@ export default function HomePage() {
   return (
     <main>{announcements.length > 0 && <aside className="public-announcements shell" aria-label="Market announcements">{announcements.slice(0, 3).map((item) => <p key={item.id}><b>Market notice:</b> {item.title}</p>)}</aside>}
       <section className="hero">
-        <div className="hero-scene"><AsciiWave color="#f97316" speed={1} /></div>
+        <img className="hero-bg-image" src={heroBackground} alt="" aria-hidden="true" />
         <div className="hero-vignette" />
         <div className="hero-content shell">
           <div className="hero-copy">
@@ -150,35 +100,35 @@ export default function HomePage() {
             <h1>Know what's <em>fresh</em> before you go.</h1>
             <p className="hero-lede">See what local farmers picked today. Reserve your basket and collect it at the market, no wasted trips, no wilted surprises.</p>
             <div className="hero-gallery hero-gallery--mobile">
-              <CoolSlideGallery slides={heroSlides} cardWidth={360} cardHeight={430} showTitle showArrows showDots draggable autoplay />
+              <FeatureCarousel slides={featureSlides} />
             </div>
-            <form className="hero-search" onSubmit={(event) => { event.preventDefault(); navigate(`/markets${location ? `?near=${encodeURIComponent(location)}` : ''}`) }}>
-              <label><MapPin /><input value={location} onChange={(event) => { setLocation(event.target.value); setLiveLocation(null) }} placeholder="Enter your neighbourhood or postcode" aria-label="Your location" /></label>
-              <button className="btn" type="submit"><Search /> Find fresh food</button>
+            <form className="hero-search hero-search--split" onSubmit={(event) => { event.preventDefault(); navigate(`/products?${new URLSearchParams({ ...(produceQuery ? { search: produceQuery } : {}), ...(location ? { near: location } : {}) }).toString()}`) }}>
+              <label><MapPin /><input value={location} onChange={(event) => { setLocation(event.target.value); setLiveLocation(null) }} placeholder={user ? 'Using your saved address' : 'Enter your neighbourhood first'} aria-label="Your location" /></label>
+              <label><Search /><input value={produceQuery} onChange={(event) => setProduceQuery(event.target.value)} placeholder="Then search tomatoes, spinach, eggs..." aria-label="Search produce" /></label>
+              <button className="btn" type="submit"><Search /> Search nearby stock</button>
             </form>
             <div className="hero-trust"><span><Check /> Live stock</span><span><Check /> Reserve free</span><span><Check /> Pay at pickup</span></div>
           </div>
           <div className="hero-gallery hero-gallery--desktop">
-            <CoolSlideGallery slides={heroSlides} cardWidth={360} cardHeight={430} showTitle showArrows showDots draggable autoplay />
+            <FeatureCarousel slides={featureSlides} />
           </div>
         </div>
         <div className="next-market"><span><Clock3 /></span><div><small>NEXT MARKET OPENS</small><strong>Saturday, 8:00 AM</strong></div></div>
-        <a className="scroll-cue" href="#harvest"><span>Scroll to explore</span><i /></a>
       </section>
 
       <section id="harvest" className="section section--paper section--compact">
         <div className="shell">
           <Reveal className="section-heading"><div><p className="eyebrow">THIS WEEK'S HARVEST</p><h2>Fresh now, <em>not someday.</em></h2></div><p>Stock updates come directly from local farmers, so what you see is what you can collect.</p></Reveal>
           <div className="filter-pills">{categories.map((item) => <button key={item} className={category === item ? 'is-active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div>
-          <div className="product-grid">{products.map((product, index) => <Reveal key={product.id} delay={index * 70}><ProductCard product={product} farmer={db.farmers.find((item) => item.id === product.farmerId)} favorite={favorites.includes(product.id)} onFavorite={toggleFavorite} /></Reveal>)}</div>
+          <div className="product-grid home-product-grid">{products.map((product, index) => <Reveal key={product.id} delay={index * 70}><ProductCard product={product} farmer={db.farmers.find((item) => item.id === product.farmerId)} favorite={favorites.includes(product.id)} onFavorite={toggleFavorite} /></Reveal>)}</div>
           <div className="section-link"><Link to="/products">Browse the whole harvest <ArrowRight /></Link></div>
         </div>
       </section>
 
       <section className="section section--paper section--compact">
         <div className="shell">
-          <Reveal className="section-heading"><div><p className="eyebrow">SEASONAL</p><h2>What's fresh <em>this season?</em></h2></div><p>A steady, deterministic pick of what's in season right now — not randomised, so it stays accurate week to week.</p></Reveal>
-          <div className="product-grid">{seasonalProducts.map((product, index) => <Reveal key={product.id} delay={index * 70}><ProductCard product={product} farmer={db.farmers.find((item) => item.id === product.farmerId)} /></Reveal>)}</div>
+          <Reveal className="section-heading seasonal-heading"><div><p className="eyebrow">SEASONAL</p><h2>What's fresh <em>this season?</em></h2></div><div><p>A steady, deterministic pick of what's in season right now — not randomised, so it stays accurate week to week.</p><Link className="arrow-link seasonal-heading__link" to="/products?seasonal=1&recent=0">Explore seasonal fresh produce <ArrowRight /></Link></div></Reveal>
+          <div className="product-grid home-product-grid">{seasonalProducts.map((product, index) => <Reveal key={product.id} delay={index * 70}><ProductCard product={product} farmer={db.farmers.find((item) => item.id === product.farmerId)} /></Reveal>)}</div>
         </div>
       </section>
 
@@ -192,29 +142,50 @@ export default function HomePage() {
         </div>
       </section>
 
-      {featuredFarmer && (
-        <section className="section section--ink">
-          <div className="shell story-grid">
-            <Reveal className="story-image">
-              <img src={marketCrate} alt="Fresh vegetables in a wooden farm crate" />
-              <div><span>{featuredFarmer.years || 10}</span><p>years growing locally</p></div>
-            </Reveal>
-            <Reveal delay={140} className="story-copy">
-              <p className="eyebrow eyebrow--gold">{featuredFarmer.featured ? 'FEATURED GROWER SPOTLIGHT' : 'MEET YOUR GROWER'}</p>
-              <blockquote>"{featuredFarmer.bio || 'Good food should not have a mystery in the middle.'}"</blockquote>
-              <p>{featuredFarmer.owner} and family grow every harvest with soil-first methods, then update their stock themselves before each market.</p>
-              <div className="farmer-sign">
-                <span>{featuredFarmer.initials}</span>
-                <div>
-                  <strong>{featuredFarmer.owner}</strong>
-                  <small>{featuredFarmer.name} · {featuredFarmer.specialties?.join(', ') || 'Fresh harvest'}</small>
-                </div>
-              </div>
-              <Link className="btn btn--harvest" to={`/farmers/${featuredFarmer.id}`}>Visit the farm profile <ArrowRight /></Link>
-            </Reveal>
+      <section className="section section--ink">
+        <div className="shell featured-growers">
+          <Reveal className="featured-growers__intro">
+            <p className="eyebrow eyebrow--gold">MEET YOUR GROWERS</p>
+            <h2>Trusted farmers, <em>chosen by rating.</em></h2>
+            <p>These are the top approved growers on MarketLink. Admin can feature farmers manually; otherwise the list follows rating and reviews.</p>
+            <Link className="btn btn--harvest" to="/farmers">View all farmers <ArrowRight /></Link>
+          </Reveal>
+          <div className="featured-grower-grid">
+            {featuredFarmers.map((farmer, index) => {
+              const sample = db.products.find((product) => product.farmerId === farmer.id)
+              const markets = db.markets.filter((market) => farmer.marketIds.includes(market.id))
+              return (
+                <Reveal key={farmer.id} delay={index * 90}>
+                  <article className="featured-grower-card">
+                    <img src={sample?.image || marketCrate} alt={`${farmer.name} produce`} />
+                    <div className="featured-grower-card__body">
+                      <div className="featured-grower-card__top">
+                        <span>{farmer.initials}</span>
+                        <div>
+                          <small>{farmer.featured ? 'Admin featured' : 'Top rated'}</small>
+                          <b><Star /> {farmer.rating.toFixed(1)} · {farmer.reviews} reviews</b>
+                        </div>
+                      </div>
+                      <h3>{farmer.name}</h3>
+                      <p>{farmer.bio}</p>
+                      <div className="featured-grower-meta">
+                        <span><b>{farmer.years}</b> years growing</span>
+                        <span>{farmer.specialties.slice(0, 2).join(' · ')}</span>
+                        <span>{markets[0]?.name || farmer.liveLocation || 'Local pickup'}</span>
+                      </div>
+                      <div className="farmer-sign">
+                        <span>{farmer.initials}</span>
+                        <div><strong>{farmer.owner}</strong><small>{farmer.name} - {farmer.liveLocation || markets[0]?.address || 'Lahore'}</small></div>
+                      </div>
+                      <Link className="arrow-link" to={`/farmers/${farmer.id}`}>Visit the farm profile <ArrowRight /></Link>
+                    </div>
+                  </article>
+                </Reveal>
+              )
+            })}
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       <section className="section section--paper section--compact">
         <div className="shell">

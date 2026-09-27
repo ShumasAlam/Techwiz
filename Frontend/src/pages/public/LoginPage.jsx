@@ -4,9 +4,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 const demos = [
-  { role: 'Customer', icon: ShoppingBasket, email: 'customer@marketlink.demo', note: 'Browse, reserve & review' },
-  { role: 'Farmer', icon: Store, email: 'farmer@marketlink.demo', note: 'Stock & order portal' },
-  { role: 'Admin', icon: UserCog, email: 'admin@marketlink.demo', note: 'Platform control room' },
+  { role: 'Customer', icon: ShoppingBasket, email: 'customer@marketlink.demo', password: 'demo123', note: 'Browse, reserve & review' },
+  { role: 'Farmer', icon: Store, email: 'farmer@marketlink.demo', password: 'demo123', note: 'Stock & order portal' },
+  { role: 'Admin', icon: UserCog, email: 'admin123@gmail.com', password: 'admin123', note: 'Platform control room' },
 ]
 
 export default function LoginPage() {
@@ -20,7 +20,8 @@ export default function LoginPage() {
     event?.preventDefault?.()
     setError('')
     try {
-      const user = await login(demoEmail || email, demoEmail ? 'demo123' : password)
+      const demo = demos.find((item) => item.email === demoEmail)
+      const user = await login(demoEmail || email, demo ? demo.password : password)
       navigate(location.state?.from || `/${user.role}/dashboard`)
     } catch (nextError) { setError(nextError.message) }
   }
