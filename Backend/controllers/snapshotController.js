@@ -67,6 +67,9 @@ const getSnapshot = async (req, res) => {
       reviews: f.reviews || 0,
       years: f.years || 0,
       featured: Boolean(f.featured),
+      liveLocation: f.liveLocation || '',
+      lat: f.lat || 0,
+      lng: f.lng || 0,
       status: f.status || 'approved',
       bio: f.bio || '',
       specialties: f.specialties || [],
@@ -97,7 +100,10 @@ const getSnapshot = async (req, res) => {
       recentlyRestocked: Boolean(p.recentlyRestocked),
       seasonal: Boolean(p.seasonal),
       popular: Boolean(p.popular),
-      freshToday: Boolean(p.freshToday)
+      freshToday: Boolean(p.freshToday),
+      stockedThisMorning: Boolean(p.stockedThisMorning),
+      expiresInHours: p.expiresInHours || 0,
+      freshWindow: Boolean(p.freshWindow)
     }));
 
     const normalizedReviews = reviews.map(r => ({

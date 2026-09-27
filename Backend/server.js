@@ -23,12 +23,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connect to MongoDB Atlas / Local MongoDB
+let cachedConnection = null;
 const connectDB = async () => {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
   try {
     const conn = await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 20000,
     });
     console.log(`✅ MongoDB Connected Successfully: ${conn.connection.host}`);
+    return conn;
   } catch (err) {
     console.error('❌ MongoDB Connection Error:', err.message);
     console.log('ℹ️ Ensure your MONGODB_URI is set correctly in Backend/.env and your IP is whitelisted on Mongo Atlas Network Access.');
@@ -36,6 +39,19 @@ const connectDB = async () => {
 };
 
 connectDB();
+
+// Middleware to ensure DB is connected for serverless invocations (Vercel)
+app.use(async (req, res, next) => {
+  if (req.path === '/api/health' || req.path === '/') return next();
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      await connectDB();
+    } catch (e) {
+      return res.status(503).json({ message: 'Database unavailable', error: e.message });
+    }
+  }
+  next();
+});
 
 // Health / Status endpoint
 app.get('/api/health', (req, res) => {

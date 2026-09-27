@@ -1,4 +1,4 @@
-import { cloneSeedData } from './mockData'
+// Demo data import removed
 import { uid } from '../utils/helpers'
 
 const DB_KEY = 'marketlink_demo_db_v1'
@@ -8,63 +8,25 @@ const wait = (value, delay = 80) => new Promise((resolve) => setTimeout(() => re
 
 const readDB = () => {
   try {
-    const stored = localStorage.getItem(DB_KEY)
+    const stored = localStorage.getItem(DB_KEY);
     if (stored) {
-      const db = JSON.parse(stored)
-      let upgraded = false
-      if (!db.tripCatalogVersion) {
-        const seed = cloneSeedData()
-        for (const product of seed.products.filter((item) => Number(item.id.slice(2)) >= 30)) {
-          if (!db.products.some((item) => item.id === product.id)) db.products.push(product)
-        }
-        db.products.forEach((product) => {
-          if (product.comparisonGroup === 'eggs') product.category = 'Eggs'
-          if (product.id === 'p-14') { product.name = 'Fresh Spinach'; product.description = 'Tender local spinach for everyday cooking.' }
-          if (!['Vegetables', 'Fruit', 'Fruits'].includes(product.category)) {
-            product.freshToday = false
-            if (product.badge === 'Picked today') product.badge = 'Market favourite'
-          }
-        })
-        db.notifications?.forEach((item) => { item.text = item.text.replaceAll('Organic Spinach', 'Fresh Spinach') })
-        db.tripCatalogVersion = 1
-        upgraded = true
-      }
-      db.products?.forEach((product) => {
-        const isFreshProduce = ['Vegetables', 'Fruit', 'Fruits'].includes(product.category)
-        const stockedThisMorning = isFreshProduce && (product.harvestDaysAgo ?? 0) === 0 && (product.lastUpdatedMinutesAgo ?? 0) <= 360
-        const expiresInHours = stockedThisMorning ? Math.max(1, 24 - Math.ceil((product.lastUpdatedMinutesAgo ?? 0) / 60)) : 0
-        if (product.stockedThisMorning !== stockedThisMorning || product.expiresInHours !== expiresInHours || product.freshWindow !== (stockedThisMorning && expiresInHours <= 24)) {
-          product.stockedThisMorning = stockedThisMorning
-          product.expiresInHours = expiresInHours
-          product.freshWindow = stockedThisMorning && expiresInHours <= 24
-          upgraded = true
-        }
-      })
-      db.farmers?.forEach((farmer) => {
-        const user = db.users?.find((item) => item.id === farmer.userId)
-        if (farmer.featured === undefined) {
-          farmer.featured = ['f-1', 'f-2', 'f-3'].includes(farmer.id)
-          upgraded = true
-        }
-        if (!farmer.liveLocation && user?.address) {
-          farmer.liveLocation = user.address
-          upgraded = true
-        }
-      })
-      const admin = db.users?.find((item) => item.role === 'admin')
-      if (admin && (admin.email !== 'admin123@gmail.com' || admin.password !== 'admin123')) {
-        admin.email = 'admin123@gmail.com'
-        admin.password = 'admin123'
-        upgraded = true
-      }
-      if (upgraded) localStorage.setItem(DB_KEY, JSON.stringify(db))
-      return db
+      return JSON.parse(stored);
     }
-  } catch { /* self-heal below */ }
-  const fresh = cloneSeedData()
-  localStorage.setItem(DB_KEY, JSON.stringify(fresh))
-  return fresh
-}
+  } catch {
+    // ignore parse errors
+  }
+  // Return an empty structure; syncRemoteSnapshot will populate cache later
+  return {
+    users: [],
+    markets: [],
+    farmers: [],
+    products: [],
+    stockSubscriptions: [],
+    notifications: [],
+    reviews: [],
+    orders: [],
+  };
+};
 
 const writeDB = (data) => {
   localStorage.setItem(DB_KEY, JSON.stringify(data))
@@ -105,16 +67,8 @@ const remote = async (path, options = {}) => {
 }
 
 const localFirst = async (path, options, fallback) => {
-  if (!API_URL) return wait(fallback ? fallback() : null)
-  try {
-    return await remote(path, options)
-  } catch (error) {
-    if (error.status && error.status >= 400 && error.status < 500) {
-      throw error
-    }
-    console.warn(`MarketLink API unavailable for ${path}; using local demo fallback.`, error.message)
-    return wait(fallback ? fallback() : null)
-  }
+  // Demo fallback removed; always use the live backend.
+  return await remote(path, options);
 }
 
 const hydrateDerivedFields = (db) => {
