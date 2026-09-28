@@ -108,16 +108,7 @@ const hydrateDerivedFields = (db) => {
   db.users ||= []
   db.markets ||= []
   db.farmers ||= []
-  db.products ||= []
-
-  db.users = db.users.filter((user) => !DEMO_USER_IDS.has(user.id))
-  db.markets = db.markets.filter((market) => !isDemoMarket(market))
-  db.farmers = db.farmers.filter((farmer) => !isDemoFarmer(farmer))
-  db.products = db.products.filter((product) => !isDemoProduct(product) && db.farmers.some((farmer) => farmer.id === product.farmerId))
-  db.reviews = db.reviews.filter((review) => db.products.some((product) => product.id === review.productId))
-  db.orders = db.orders.filter((order) => db.farmers.some((farmer) => farmer.id === order.farmerId) && (!order.marketId || db.markets.some((market) => market.id === order.marketId)))
-  db.notifications = db.notifications.filter((notification) => !notification.userId || db.users.some((user) => user.id === notification.userId))
-  db.stockSubscriptions = db.stockSubscriptions.filter((subscription) => db.products.some((product) => product.id === subscription.productId))
+  db.announcements ||= []
 
   db.products?.forEach((product) => {
     product.image = resolveFallbackImage(product)
@@ -618,12 +609,11 @@ export const api = {
     list: () => localFirst('/subscriptions', { method: 'GET' }, () => readDB().stockSubscriptions || []),
   },
   announcements: {
-    publish: (text) => localFirst('/announcements', { method: 'POST', body: JSON.stringify({ text }) }, () => {
-      const db = readDB()
-      db.users.filter((user) => user.role === 'customer').forEach((user) => addNotification(db, user.id, 'announcement', text))
-      writeDB(db)
-      return { success: true }
-    }),
+    list: () => localFirst('/announcements', { method: 'GET' }, () => readDB().announcements || []),
+    listAdmin: () => localFirst('/announcements/admin', { method: 'GET' }, () => readDB().announcements || []),
+    publish: (payload) => localFirst('/announcements', { method: 'POST', body: JSON.stringify(typeof payload === 'string' ? { title: payload, text: payload } : payload) }),
+    update: (id, payload) => localFirst(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    remove: (id) => localFirst(`/announcements/${id}`, { method: 'DELETE' }),
   },
   snapshot: () => readDB(),
 }

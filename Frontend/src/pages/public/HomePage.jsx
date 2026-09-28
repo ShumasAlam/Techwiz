@@ -102,7 +102,7 @@ export default function HomePage() {
   useEffect(() => { document.title = 'MarketLink - Fresh before you go' }, [])
 
   return (
-    <main>{announcements.length > 0 && <aside className="public-announcements shell" aria-label="Market announcements">{announcements.slice(0, 3).map((item) => <p key={item.id}><b>Market notice:</b> {item.title}</p>)}</aside>}
+    <main>
       <section className="hero">
         <img className="hero-bg-image" src={heroBackground} alt="" aria-hidden="true" />
         <div className="hero-vignette" />

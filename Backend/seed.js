@@ -10,6 +10,7 @@ const Order = require('./models/Order');
 const Review = require('./models/Review');
 const Notification = require('./models/Notification');
 const StockSubscription = require('./models/StockSubscription');
+const Announcement = require('./models/Announcement');
 
 const seedDatabase = async () => {
   try {
@@ -31,7 +32,8 @@ const seedDatabase = async () => {
       Order.deleteMany({}),
       Review.deleteMany({}),
       Notification.deleteMany({}),
-      StockSubscription.deleteMany({})
+      StockSubscription.deleteMany({}),
+      Announcement.deleteMany({})
     ]);
     console.log('🧹 Cleared existing database collections');
 
@@ -329,6 +331,27 @@ const seedDatabase = async () => {
 
     await Notification.insertMany(notifications);
     console.log(`🔔 Seeded ${notifications.length} Notifications`);
+
+    // 8. Create Announcements
+    const announcements = [
+      {
+        id: 'a-1',
+        title: 'Fresh organic greens & seasonal berries arriving this weekend at Liberty Harvest Market!',
+        content: 'Multiple local growers are bringing freshly picked produce directly from farms.',
+        date: 'Today',
+        isActive: true
+      },
+      {
+        id: 'a-2',
+        title: 'New pickup slot reservation open for Wednesday Evening DHA Farmers Hall.',
+        content: 'Reserve before Tuesday 6 PM to ensure your basket is packed.',
+        date: 'Yesterday',
+        isActive: true
+      }
+    ];
+
+    await Announcement.insertMany(announcements);
+    console.log(`📢 Seeded ${announcements.length} Announcements`);
 
     console.log('\n==========================================');
     console.log('🎉 MongoDB Atlas Database Seeded Successfully!');

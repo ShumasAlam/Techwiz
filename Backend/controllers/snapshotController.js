@@ -7,13 +7,14 @@ const Review = require('../models/Review');
 const Notification = require('../models/Notification');
 const StockSubscription = require('../models/StockSubscription');
 const Category = require('../models/Category');
+const Announcement = require('../models/Announcement');
 const { ensureDefaultCategories } = require('./categoryController');
 
 const getSnapshot = async (req, res) => {
   try {
     await ensureDefaultCategories();
 
-    const [users, markets, farmers, products, reviews, orders, notifications, stockSubscriptions, categories] = await Promise.all([
+    const [users, markets, farmers, products, reviews, orders, notifications, stockSubscriptions, categories, announcements] = await Promise.all([
       User.find({}).select('-password').lean(),
       Market.find({}).lean(),
       Farmer.find({}).lean(),
@@ -22,7 +23,8 @@ const getSnapshot = async (req, res) => {
       Order.find({}).sort({ createdAt: -1 }).lean(),
       Notification.find({}).sort({ createdDate: -1, createdAt: -1 }).lean(),
       StockSubscription.find({}).lean(),
-      Category.find({ isActive: true }).sort({ name: 1 }).lean()
+      Category.find({ isActive: true }).sort({ name: 1 }).lean(),
+      Announcement.find({ isActive: true }).sort({ createdAt: -1 }).lean()
     ]);
 
     const normalizedUsers = users.map(u => ({
@@ -143,6 +145,17 @@ const getSnapshot = async (req, res) => {
       productId: n.productId
     }));
 
+    const normalizedAnnouncements = (announcements || []).map(a => ({
+      id: a.id || a._id.toString(),
+      title: a.title,
+      content: a.content || '',
+      image: a.image || '',
+      link: a.link || '',
+      date: a.date || new Date(a.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      updatedAt: a.updatedAtText || '',
+      isActive: a.isActive !== false
+    }));
+
     res.json({
       users: normalizedUsers,
       markets: normalizedMarkets,
@@ -151,6 +164,7 @@ const getSnapshot = async (req, res) => {
       reviews: normalizedReviews,
       orders: normalizedOrders,
       notifications: normalizedNotifications,
+      announcements: normalizedAnnouncements,
       stockSubscriptions: stockSubscriptions.map(s => ({ userId: s.userId, productId: s.productId })),
       categories: categories.map(c => ({ id: c.id, name: c.name, slug: c.slug }))
     });
