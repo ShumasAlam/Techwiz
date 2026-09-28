@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarCheck, Check, Clock3, LocateFixed, MapPin, Search, ShoppingBasket, Star, Store, Truck, UserRound } from 'lucide-react'
+import { ArrowRight, CalendarCheck, Check, Clock3, LocateFixed, MapPin, Megaphone, Search, ShoppingBasket, Star, Store, Truck, UserRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../../api'
@@ -64,7 +64,7 @@ function featureCardsFromData(db) {
 export default function HomePage() {
   const db = api.snapshot()
   const { user } = useAuth()
-  const [announcements] = useLocalStorage('marketlink_announcements', [])
+  const [announcements, setAnnouncements] = useLocalStorage('marketlink_announcements', [])
   const [category, setCategory] = useState('All harvest')
   const [favorites, setFavorites] = useState([])
   const [location, setLocation] = useState(user?.address || '')
@@ -100,6 +100,16 @@ export default function HomePage() {
   }
 
   useEffect(() => { document.title = 'MarketLink - Fresh before you go' }, [])
+  useEffect(() => {
+    let mounted = true
+    api.announcements.list().then((items) => {
+      if (mounted && Array.isArray(items)) setAnnouncements(items)
+    })
+    return () => { mounted = false }
+  }, [setAnnouncements])
+
+  const announcementSlides = useMemo(() => announcements.filter((item) => item.title || item.image).slice(0, 6), [announcements])
+  const announcementTrack = announcementSlides.length > 1 ? [...announcementSlides, ...announcementSlides] : announcementSlides
 
   return (
     <main>
@@ -127,6 +137,8 @@ export default function HomePage() {
         </div>
         <div className="next-market"><span><Clock3 /></span><div><small>NEXT MARKET OPENS</small><strong>{nextMarketTime}</strong></div></div>
       </section>
+
+      {announcementSlides.length > 0 && <aside className={`public-announcements ${announcementSlides.length > 1 ? 'public-announcements--scrolling' : ''}`} aria-label="Market announcements" aria-live="polite" style={{ '--announcement-count': announcementSlides.length }}><div className="public-announcements__track">{announcementTrack.map((item, index) => <article key={`${item.id}-${index}`} className={!item.title ? 'public-announcements__slide public-announcements__slide--image-only' : 'public-announcements__slide'}>{item.image ? <img src={item.image} alt={item.title ? `${item.title} announcement` : 'Market announcement'} /> : <span className="public-announcements__icon"><Megaphone /></span>}{item.title && <p><small>Market announcement</small><b>{item.title}</b><em>{item.updatedAt || item.date || 'Today'}</em></p>}</article>)}</div></aside>}
 
       <section id="harvest" className="section section--paper section--compact">
         <div className="shell">

@@ -17,7 +17,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import api from '../../api'
@@ -84,6 +84,14 @@ export default function AdminDashboard() {
   const [announcementForm, setAnnouncementForm] = useState({ title: '', image: '' })
   const [editingAnnouncementId, setEditingAnnouncementId] = useState(null)
 
+  useEffect(() => {
+    let mounted = true
+    api.announcements.list().then((items) => {
+      if (mounted && Array.isArray(items)) setAnnouncements(items)
+    })
+    return () => { mounted = false }
+  }, [setAnnouncements])
+
   const refresh = () => setVersion((value) => value + 1)
   const statusFarmer = async (id, status) => {
     await api.admin.updateFarmerStatus(id, status)
@@ -134,12 +142,19 @@ export default function AdminDashboard() {
   const handleAnnouncementImage = (event) => {
     const file = event.target.files?.[0]
     if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      toast.error('Use a PNG, JPG, or WebP image')
+      event.target.value = ''
+      return
+    }
     if (file.size > 700 * 1024) {
       toast.error('Choose a smaller announcement image under 700 KB')
+      event.target.value = ''
       return
     }
     const reader = new FileReader()
     reader.onload = () => setAnnouncementForm((current) => ({ ...current, image: reader.result }))
+    reader.onerror = () => toast.error('Could not read that image')
     reader.readAsDataURL(file)
   }
   const resetAnnouncementForm = () => {
@@ -148,26 +163,22 @@ export default function AdminDashboard() {
   }
   const publishAnnouncement = async () => {
     const value = announcementForm.title.trim()
-    if (!value) return
-    if (editingAnnouncementId) {
-      try {
-        await api.announcements.update(editingAnnouncementId, { title: value, image: announcementForm.image })
-        setAnnouncements((current) => current.map((item) => item.id === editingAnnouncementId ? { ...item, title: value, image: announcementForm.image, updatedAt: 'Updated today' } : item))
-        resetAnnouncementForm()
-        refresh()
-        toast.success('Announcement updated successfully')
-      } catch (err) {
-        toast.error(err.message)
-      }
+    if (!value && !announcementForm.image) {
+      toast.error('Add announcement text or upload an image')
       return
     }
     try {
-      const result = await api.announcements.publish({ title: value, image: announcementForm.image })
-      const newAnnounce = result?.announcement || { id: `a-${Date.now()}`, title: value, image: announcementForm.image, date: 'Today' }
-      setAnnouncements((current) => [newAnnounce, ...current.filter(i => i.id !== newAnnounce.id)])
+      if (editingAnnouncementId) {
+        const updated = await api.announcements.update(editingAnnouncementId, { title: value, image: announcementForm.image })
+        setAnnouncements((current) => current.map((item) => item.id === editingAnnouncementId ? { ...item, ...updated } : item))
+        resetAnnouncementForm()
+        toast.success(updated.localOnly ? 'Announcement updated locally. Deploy the updated backend for live publishing.' : 'Announcement updated')
+        return
+      }
+      const created = await api.announcements.publish({ title: value, image: announcementForm.image })
+      setAnnouncements((current) => [created, ...current.filter((item) => item.id !== created.id)])
       resetAnnouncementForm()
-      refresh()
-      toast.success('Announcement published successfully')
+      toast.success(created.localOnly ? 'Announcement saved locally. Deploy the updated backend for live publishing.' : 'Announcement published')
     } catch (error) {
       toast.error(error.message)
     }
@@ -177,18 +188,10 @@ export default function AdminDashboard() {
     setEditingAnnouncementId(item.id)
   }
   const deleteAnnouncement = async (id) => {
-    try {
-      await api.announcements.remove(id)
-      setAnnouncements((current) => current.filter((item) => item.id !== id))
-      if (editingAnnouncementId === id) resetAnnouncementForm()
-      refresh()
-      toast.success('Announcement deleted successfully')
-    } catch (err) {
-      setAnnouncements((current) => current.filter((item) => item.id !== id))
-      if (editingAnnouncementId === id) resetAnnouncementForm()
-      refresh()
-      toast.success('Announcement removed')
-    }
+    await api.announcements.remove(id)
+    setAnnouncements((current) => current.filter((item) => item.id !== id))
+    if (editingAnnouncementId === id) resetAnnouncementForm()
+    toast.success('Announcement deleted')
   }
 
   const farmers = db.farmers
@@ -341,7 +344,7 @@ export default function AdminDashboard() {
             <div className="panel-title"><div><p className="eyebrow">PLATFORM ANNOUNCEMENTS</p><h2>Sales, news and short customer notices</h2></div></div>
             <form className="announcement-form" onSubmit={(event) => { event.preventDefault(); publishAnnouncement() }}>
               <div className="announcement-form-main">
-                <label><span>Announcement text</span><input aria-label="Announcement text" value={announcementForm.title} onChange={(event) => setAnnouncementForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Weekend sale on fresh vegetables" /></label>
+                <label><span>Announcement text optional</span><input aria-label="Announcement text" value={announcementForm.title} onChange={(event) => setAnnouncementForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Weekend sale on fresh vegetables" /></label>
                 <label><span>Small banner image</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAnnouncementImage} /></label>
               </div>
               {announcementForm.image && <div className="announcement-preview"><img src={announcementForm.image} alt="Announcement preview" /><button className="text-btn" type="button" onClick={() => setAnnouncementForm((current) => ({ ...current, image: '' }))}>Remove image</button></div>}
@@ -350,7 +353,7 @@ export default function AdminDashboard() {
                 {editingAnnouncementId && <button className="text-btn" type="button" onClick={resetAnnouncementForm}>Cancel edit</button>}
               </div>
             </form>
-            <div className="announcement-list">{announcements.map((item) => <article key={item.id} className="announcement-row">{item.image ? <img src={item.image} alt="" /> : <span className="announcement-icon"><Clock3 /></span>}<div><small>{item.updatedAt || item.date}</small><b>{item.title}</b></div><div className="announcement-actions"><button className="text-btn" onClick={() => editAnnouncement(item)}>Update</button><button className="text-btn danger-link" onClick={() => deleteAnnouncement(item.id)}>Delete</button></div></article>)}</div>
+            <div className="announcement-list">{announcements.map((item) => <article key={item.id} className="announcement-row">{item.image ? <img src={item.image} alt="" /> : <span className="announcement-icon"><Clock3 /></span>}<div><small>{item.localOnly ? 'Saved locally' : item.updatedAt || item.date}</small><b>{item.title || 'Image announcement'}</b></div><div className="announcement-actions"><button className="text-btn" onClick={() => editAnnouncement(item)}>Update</button><button className="text-btn danger-link" onClick={() => deleteAnnouncement(item.id)}>Delete</button></div></article>)}{!announcements.length && <div className="empty-strip"><Megaphone /><span>No announcements published yet.</span></div>}</div>
           </section>
         )}
 

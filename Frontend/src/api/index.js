@@ -26,6 +26,7 @@ const resolveFallbackImage = (product) => {
 }
 
 const DB_KEY = 'marketlink_db_snapshot_v1'
+const ANNOUNCEMENTS_KEY = 'marketlink_announcements'
 const API_URL = (import.meta.env.VITE_API_URL || 'https://techwiz-backend-gold.vercel.app/api').replace(/\/$/, '')
 const DEMO_USER_IDS = new Set(['u-customer', 'u-farmer', 'u-admin'])
 const isDemoProduct = (item) => /^p-\d+$/.test(item?.id || '')
@@ -60,6 +61,35 @@ const writeDB = (data) => {
   }
   return data
 }
+
+const readAnnouncements = () => {
+  try {
+    return JSON.parse(localStorage.getItem(ANNOUNCEMENTS_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+const writeAnnouncements = (items) => {
+  localStorage.setItem(ANNOUNCEMENTS_KEY, JSON.stringify(items))
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('marketlink:announcements'))
+  }
+  return items
+}
+
+const normalizeAnnouncementPayload = (payload) => {
+  const title = typeof payload === 'string' ? payload : payload?.title
+  const image = typeof payload === 'string' ? '' : payload?.image || ''
+  return { title: (title || '').trim(), image }
+}
+
+const makeLocalAnnouncement = ({ title, image }) => ({
+  id: `a-${Date.now()}`,
+  title,
+  image,
+  date: 'Today',
+})
 
 const remote = async (path, options = {}) => {
   if (!API_URL) throw new Error('Live API is not configured')
@@ -108,7 +138,16 @@ const hydrateDerivedFields = (db) => {
   db.users ||= []
   db.markets ||= []
   db.farmers ||= []
-  db.announcements ||= []
+  db.products ||= []
+
+  db.users = db.users.filter((user) => !DEMO_USER_IDS.has(user.id))
+  db.markets = db.markets.filter((market) => !isDemoMarket(market))
+  db.farmers = db.farmers.filter((farmer) => !isDemoFarmer(farmer))
+  db.products = db.products.filter((product) => !isDemoProduct(product) && db.farmers.some((farmer) => farmer.id === product.farmerId))
+  db.reviews = db.reviews.filter((review) => db.products.some((product) => product.id === review.productId))
+  db.orders = db.orders.filter((order) => db.farmers.some((farmer) => farmer.id === order.farmerId) && (!order.marketId || db.markets.some((market) => market.id === order.marketId)))
+  db.notifications = db.notifications.filter((notification) => !notification.userId || db.users.some((user) => user.id === notification.userId))
+  db.stockSubscriptions = db.stockSubscriptions.filter((subscription) => db.products.some((product) => product.id === subscription.productId))
 
   db.products?.forEach((product) => {
     product.image = resolveFallbackImage(product)
@@ -609,11 +648,54 @@ export const api = {
     list: () => localFirst('/subscriptions', { method: 'GET' }, () => readDB().stockSubscriptions || []),
   },
   announcements: {
-    list: () => localFirst('/announcements', { method: 'GET' }, () => readDB().announcements || []),
-    listAdmin: () => localFirst('/announcements/admin', { method: 'GET' }, () => readDB().announcements || []),
-    publish: (payload) => localFirst('/announcements', { method: 'POST', body: JSON.stringify(typeof payload === 'string' ? { title: payload, text: payload } : payload) }),
-    update: (id, payload) => localFirst(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-    remove: (id) => localFirst(`/announcements/${id}`, { method: 'DELETE' }),
+    list: async () => {
+      try {
+        const items = await remote('/announcements', { method: 'GET' })
+        if (Array.isArray(items)) writeAnnouncements(items)
+        return Array.isArray(items) ? items : []
+      } catch {
+        return readAnnouncements()
+      }
+    },
+    publish: async (payload) => {
+      const data = normalizeAnnouncementPayload(payload)
+      const localAnnouncement = makeLocalAnnouncement(data)
+      const notificationText = data.title || 'New market announcement'
+      try {
+        const result = await remote('/announcements', { method: 'POST', body: JSON.stringify({ text: data.title, title: data.title, image: data.image }) })
+        const announcement = result.announcement || { ...localAnnouncement, localOnly: true }
+        writeAnnouncements([announcement, ...readAnnouncements().filter((item) => item.id !== announcement.id)])
+        void syncRemoteSnapshot().catch(() => {})
+        return announcement
+      } catch {
+        const db = readDB()
+        db.users.filter((user) => user.role === 'customer').forEach((user) => addNotification(db, user.id, 'announcement', notificationText))
+        writeDB(db)
+        writeAnnouncements([localAnnouncement, ...readAnnouncements()])
+        return { ...localAnnouncement, localOnly: true }
+      }
+    },
+    update: async (id, payload) => {
+      const data = normalizeAnnouncementPayload(payload)
+      const localUpdate = { id, title: data.title, image: data.image, updatedAt: 'Updated today' }
+      try {
+        const announcement = await remote(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify({ text: data.title, title: data.title, image: data.image }) })
+        writeAnnouncements(readAnnouncements().map((item) => item.id === id ? { ...item, ...announcement } : item))
+        return announcement
+      } catch {
+        writeAnnouncements(readAnnouncements().map((item) => item.id === id ? { ...item, ...localUpdate, localOnly: true } : item))
+        return { ...localUpdate, localOnly: true }
+      }
+    },
+    remove: async (id) => {
+      try {
+        await remote(`/announcements/${id}`, { method: 'DELETE' })
+      } catch (error) {
+        console.warn('Announcement delete API unavailable; removing from local cache.', error.message)
+      }
+      writeAnnouncements(readAnnouncements().filter((item) => item.id !== id))
+      return true
+    },
   },
   snapshot: () => readDB(),
 }

@@ -84,7 +84,7 @@ function AppShell() {
     <Loader done={loaded} />
     <ScrollToTop />
     {!immersive && !portal && <Navbar />}
-    <a className="skip-link" href="#page-content">Skip to content</a><div id="page-content" tabIndex={-1}><Suspense fallback={null}><Routes>
+    <a className="skip-link" href="#page-content">Skip to content</a><div id="page-content" className={!immersive && !portal ? 'has-site-nav' : ''} tabIndex={-1}><Suspense fallback={null}><Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/collections" element={<CollectionsPage />} />
       <Route path="/products" element={<ProductsPage key={search} />} />
